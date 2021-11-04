@@ -1,0 +1,43 @@
+---
+title: "dprop_beta"
+author: "Jenny Yijian Huang"
+date: "11/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# P(dbeta_star | dbeta)
+```{r}
+p_dbeta <- function(prob, dbeta_j) {
+  prob_dbeta <- log(1/length(dbeta_j)) # uniform.
+  return(prob_dbeta)
+}
+```
+
+```{r}
+f_dbeta_star <- p_dbeta(prob, dbeta_j)
+f_dbeta_star
+```
+
+# P(beta | dbeta_star, Z)
+```{r}
+f_beta_func <- function(beta_star, par_prior, SS_prev){
+  f_beta <- 0
+  for(i in 1:length(beta_star)){
+    print(i)
+    f_beta <- f_beta + stats::dgamma(beta_star[1], par_prior['a_beta'][[1]] + segmented_SS[[1]]$n_T, par_prior['b_beta'][[1]] + segmented_SS[[1]]$integral_SI, log = TRUE) # sum(dgamma(vector, par_prior['a_beta'][[1]] + segmented_SS[[1]]$n_T, ))
+  }
+return(f_beta)
+}
+```
+
+
+# log P(delta) + log P(beta| delta, Z)
+```{r}
+f_dbeta_beta <- f_dbeta + f_beta
+f_dbeta_beta
+```
