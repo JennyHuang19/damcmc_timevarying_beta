@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
         n_t         n_j integral_SI  integral_I 
    842.0000    772.0000 345416.5338    775.2242 
    
-Noe: f_log is one portion of the likelihood on which beta is constant. Calculate the complete data likelihood by adding the f_logs together.
+Note: f_log is one portion of the likelihood on which beta is constant. Calculate the complete data likelihood by adding the f_logs together.
 
 ```{r}
 #' Log likelihood of the stochastic SIR model
