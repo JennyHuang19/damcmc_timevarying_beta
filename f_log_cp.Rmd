@@ -9,12 +9,11 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# gener -- True
 # SS -- $SS
         n_t         n_j integral_SI  integral_I 
    842.0000    772.0000 345416.5338    775.2242 
    
-# f_log is one portion of the likelihood on which beta is constant. Calculate the complete data likelihood by summing f_logs together,
+Noe: f_log is one portion of the likelihood on which beta is constant. Calculate the complete data likelihood by adding the f_logs together.
 
 ```{r}
 #' Log likelihood of the stochastic SIR model
@@ -33,10 +32,9 @@ knitr::opts_chunk$set(echo = TRUE)
 #' @return log likelihood
 #' @export
 #'
-f_log_cp <- function(theta, SS, gener, b, iota_dist = "exponential") { # QUESTION: why is f_log returning 0?
+f_log_cp <- function(theta, SS, gener, b, iota_dist = "exponential") {
 
   # Setup
-  # revised f_log
   gamma  <- theta[["gamma" ]]
   shape  <- theta[["shape" ]]
   lambda <- theta[["lambda"]]
@@ -51,12 +49,6 @@ f_log_cp <- function(theta, SS, gener, b, iota_dist = "exponential") { # QUESTIO
   iota_removed    <- SS[["iota_removed"   ]]
   iota_infectious <- SS[["iota_infectious"]]
 
-  # # Loglik
-  # loglik <- # agent-based likelihood
-  #   n_T   * log(beta) + sum(log(I_tau_T)) +
-  #   n_J   * log(gamma) -
-  #   beta  * integral_SI -
-  #   gamma * integral_I
 
   # contribution of infections
   loglik_infec <- if(gener){
