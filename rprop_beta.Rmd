@@ -9,21 +9,25 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
-#install.packages("Rlab")
-library(Rlab)
-```
+Helper functions for proposing new values for (dbeta, beta).
 
-# draw from initial (dbeta)
-```{r}
-h_hat <- c(0.1, 0.1, 0.75, 0.1, 0.1)
-dbeta <- rbern(5, h_hat)
-```
+Note: Each vector component in beta_star and beta represents a time unit (e.g. a week)
 
-Note: Each vector component in beta_star and beta represents a time unit (e.g. week)
+Illustration of how the indexing works:
+
+dbeta [beta_0-to-1, beta_1-to-2, ...beta_(n-1)-to-n]
+beta [beta_0, beta_1, ...beta_n]
+
 
 # draw from (dbeta_star | dbeta)
 ```{r}
+#' Propose a new delta beta through flipping 1 component of the current dbeta vector at random.
+#'
+#' @param dbeta delta beta vector (current)
+#'
+#' @return new draw of dbeta
+#' @export
+#'
 draw_dbeta <- function(dbeta) {
   
   # Function to flip randomly 1 component in the dbeta vector.
@@ -39,40 +43,33 @@ draw_dbeta <- function(dbeta) {
 }
 ```
 
-# if we would like to flip according to a prior probability vector, we can do that is is_prob = TRUE.
+
+# if we would like to flip according to a prior probability vector, we can do that using is_prob = TRUE.
 #if(is_prop){
 # changed_dbeta <- rbern(1, prob[u])
 # dbeta[u] <- changed_dbeta
 #}
 
 ```{r}
+# example
 dbeta_j <- c(0,0,0,1,0,0)
 
 dbeta_star <- draw_dbeta(dbeta_j)
 dbeta_star
 ```
 
-```{r}
-segment_start = c(0, 1, 4)
-segment_end = c(1, 4, 6)
-dbeta_star <- c(1,0,0,1,0) # CORRECT: (week 1->2).
-```
-
-```{r}
-# 1. determine the change-point locations.
-segment_start <- c(0) # 0 the time marking the start of segment one.
-segment_start <- append(segment_start, which(dbeta_star == 1)) # append all locations where dbeta == 1. These will be additional start locations.
-
-segment_end <- c(Y[["t_end"]]) # t_end will marks the end of time.
-segment_end <- append(which(dbeta_star == 1), segment_end) # These will be additional end locations.
-
-# 2. calculate sufficient statistics using the start and end points calculated. segmented_SS contains the suff_stats for each segment.
-segmented_SS <- suff_stat2(segment_start, segment_end, x, Y, gener, b, return_SI = FALSE)
-```
-
 
 # draw from (beta | dbeta_star, Z)
 ```{r}
+#' Propose a new beta vector using gibbs_theta conditional on the location of change points (dbeta) and data.
+#'
+#' @inheritParams b_gibbs_theta
+#' @param dbeta_star delta beta vector (current)
+#' @param segmented_SS sufficient statistics of the current configuration of the latent data
+
+#' @return new draw of beta
+#' @export
+#'
 draw_beta <- function(dbeta_star, segmented_SS, iota_dist, gamma=1, par_prior, param, Y){
   
   # Function to draw a beta vector given the sufficient statistics and locations of the change-points.
@@ -101,40 +98,28 @@ draw_beta <- function(dbeta_star, segmented_SS, iota_dist, gamma=1, par_prior, p
 }
 ```
 
-dbeta [beta_0-to-1, beta_1-to-2, ...]
-beta [beta_0, beta_1, ...]
+# example draw_beta
+```{r}
+segment_start = c(0, 1, 4)
+segment_end = c(1, 4, 6)
+dbeta_star <- c(1,0,0,1,0) # CORRECT: (week 1->2).
+```
+
+```{r}
+# 1. determine the change-point locations.
+segment_start <- c(0) # 0 the time marking the start of segment one.
+segment_start <- append(segment_start, which(dbeta_star == 1)) # append all locations where dbeta == 1. These will be additional start locations.
+
+segment_end <- c(Y[["t_end"]]) # t_end will marks the end of time.
+segment_end <- append(which(dbeta_star == 1), segment_end) # These will be additional end locations.
+
+# 2. calculate sufficient statistics using the start and end points calculated. segmented_SS contains the suff_stats for each segment.
+segmented_SS <- suff_stat2(segment_start, segment_end, x, Y, gener, b, return_SI = FALSE)
+```
 
 ```{r}
 beta_new <- draw_beta(dbeta_new, segmented_SS[[segment_number]],  iota_dist="exponential", gamma=1, par_prior, param, Y)
 beta_new
-```
-
-# Testing:
-```{r}
-param = "bg"
-iota_dist = "exponential"
-gener = FALSE
-b = 1/2
-par_prior = list(
-  a_beta = 0.01, b_beta = 1,
-  a_gamma = 1, b_gamma = 1,
-  a_R0 = 2, b_R0 = 2,
-  a_lambda = 1, b_lambda = 1)
-```
-
-
-# simulate an epidemic and observed data: x and Y
-```{r }
-my_x <- simulate_SEM(
-  S0 = 1e3, I0 = 1e1, t_end = 6,
-  theta = list(R0 = 2.5, gamma = 1, lambda = 1, shape = 1),
-  iota_dist = "exponential", # "weibull"
-  gener = FALSE, b = 1/2,
-  E0 = 0, type = "SIR"
-)
-
-my_x <- my_x$x
-my_Y <- observed_data(A_x, K)
 ```
 
 
