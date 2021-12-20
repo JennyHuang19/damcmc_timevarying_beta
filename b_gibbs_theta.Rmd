@@ -8,7 +8,7 @@ output: html_document
 ```{r}
 #' Gibb's Sampler for beta (used within draw_beta)
 #'
-#' @param SS intial exposed population size
+#' @param SS sufficient statistics of the current configuration of the latent data
 #' @param par_prior parameters of the prior distributions
 #' @param param c("bg", "bR"); parameterization (beta, gamma) or (beta, R0)
 #' @param Y observed data
@@ -82,7 +82,7 @@ b_gibbs_theta <- function(SS, iota_dist="exponential", gamma=1, par_prior, param
 ```
 
 ## Testing
-# Plotting the gamma density at hand
+# Plotting an example gamma density
 ```{r}
 # Specify x-values for gamma function
 x_dgamma <- seq(0, 0.005, by = 0.0001)
@@ -95,7 +95,8 @@ plot(x_dgamma, y_dgamma)
 ```
 
 ```{r}
-# the extremely large b relative to a creates extremely small variance. 
+# the extremely large b relative to a creates very small variance. Hence, the proposal variance for beta* is small. In the case when Z is fixed, the chain converges to the true value very quickly (Gibbs sampling step).
+# the prior hyperparameters are barely at play, as data-driven components, nt and int(st, it), are much larger.
 rgamma(10, 24.01, 14445.19)
 ```
 
