@@ -5,19 +5,10 @@ date: "12/17/2021"
 output: html_document
 ---
 
-Questions:
-0. Is the starting location for theta affecting the chain? (is starting out exactly on target affecting/lowering acceptance rates?)
-1. Why are the acceptance ratios so low? Why is the likelihood term large in magnitude and negative? Hence, the difference in likelihood terms is dominating the ratio. (why are the likelihood values so low -2500s even when we are using the true values for beta, gamma). Is it valid to re-weight the likelihood and the proposal distribution in the MH ratio?
-4. f_beta: spiky/strange gamma distribution. Read up on gamma distributions.
-5. Read up on MH: what is detailed balance?
-
-Notes:
-0. I separated theta into beta_i and gamma in several places. (f_log, gibbs_theta).
-1. I renamed several helper functions with "b" in front to indicate modifications for accommodating a piecewise beta.
-
-# simulate an epidemic and observed data: x and Y
 ```{r }
-my_x <- simulate_SEM(
+# simulate an epidemic and observed data: x and Y
+
+practice_x <- simulate_SEM(
   S0 = 1e3, I0 = 1e1, t_end = 6,
   theta = list(R0 = 2.5, gamma = 1, lambda = 1, shape = 1),
   iota_dist = "exponential", # "weibull"
@@ -26,30 +17,33 @@ my_x <- simulate_SEM(
 )
 # beta  <- R0 / gamma / S0
 
-x <- my_x$x
-Y <- observed_data(A_x, K)
+x <- practice_x$x
+Y <- observed_data(practice_x, K)
 ```
 
-```{r}
-sample_run <- run_DAMCMC_beta(
-  Y, N = 5000,
-  rho = 1, param = "bg", approx = "ldp",
-  iota_dist = "exponential", gener = FALSE, b = 1/2,
-  thin = 10,
-  par_prior = list(
-    a_beta = 0.01, b_beta = 1,
-    a_gamma = 1, b_gamma = 1,
-    a_R0 = 2, b_R0 = 2,
-    a_lambda = 1, b_lambda = 1
-  ),
-  h_hat = c(0.9,0.9,0.9,0.9,0.9) # P(dbeta_i = 0)
-)
-```
+# First Attempt at Full DA-MCMC
 
-# DA-MCMC
 ```{r}
+#' Run a DA-MCMC to infer beta and delta_beta (dbeta) vectors, keeping latent data Z constant.
+#'
+#' @inheritParams experiment_1_proof_of_concept
+#' @param x complete data
+#' @param Y observed data
+#' @param N number of MCMC iterations
+#' @param rho proportion of the latent data updated each iteration
+#' @param param parameterization: "bg" indicates (beta,gamma)
+#' @param approx c("poisson", "ldp"); whether to approximate the distribution of the infection times with a poisson process or a linear death process
+#' @param iota_dist parameterization: "bg" indicates (beta,gamma)
+#' @param gener logical; whether to use the generalized SIR of Severo (1972)
+#' @param b parameter of the generalized SIR
+#' @param thin thinning parameter for the Markov chain
+#' @param par_prior parameters of the prior distributions
+#' @param h_hat prior for P(dbeta_i = 1)
+#' @return list with the draws for the parameters, the log likelihood, and acceptance rate
+#' @export
+#'
 run_DAMCMC_beta <- function(
-  Y, N = 1000,
+  x, Y, N = 50000,
   rho = 1, param = "bg", approx = "ldp",
   iota_dist = "exponential", gener = FALSE, b = 1/2,
   thin = 100,
@@ -59,7 +53,7 @@ run_DAMCMC_beta <- function(
     a_R0 = 2, b_R0 = 2,
     a_lambda = 1, b_lambda = 1
   ),
-  h_hat = c(0.75,0.75,0.75,0.75,0.75) # P(dbeta_i = 0)
+  h_hat = c(0.9,0.9,0.9,0.9,0.9) # P(dbeta_i = 0)
 ) {
   
     # Setup
@@ -67,17 +61,16 @@ run_DAMCMC_beta <- function(
     b_accept <- numeric(N) # T/F whether the iteration accepts the proposal
     dbeta_save <- numeric(N / thin)
     beta_save <- numeric(N / thin)
-    
-    
-    # theta_0 <- complete_theta(theta_0, iota_dist, Y[["S0"]])
-    # theta_save[[1]] <- theta <- theta_0 # theta
+  
     
 
     # Setting Z as the true epidemic path for now.
     x_current <- x
     
     # init proposal
-    # 1. Propose dbeta
+    if (!require(Rlab)) install.packages('Rlab')
+    library(Rlab)
+    # 1. propose dbeta
     dbeta_current <- rbern(length(h_hat), (1-h_hat))
     dbeta_save[1] <- list(dbeta_current)
     
@@ -87,22 +80,28 @@ run_DAMCMC_beta <- function(
     segment_end <- c(Y[["t_end"]]) # t_end will marks the end of time.
     segment_end <- append(which(dbeta_current == 1), segment_end) # here are the additional end locations.
     
-    # 3. calculate sufficient statistics for z using the start and end points calculated. segmented_SS is suff. statistics for each segment.
+    # 3. calculate sufficient statistics for z using the start and end points calculated.
     segmented_SS_current <- suff_stat2(segment_start, segment_end, x_current, Y, gener, b, return_SI = FALSE)
 
-    # 4. Propose (beta | dbeta)
+    # 4. propose (beta | dbeta)
     beta_current <- draw_beta(dbeta_current, segmented_SS_current, iota_dist, gamma=1, par_prior, param, Y)
     beta_save[1] <- list(beta_current)
+    
+    
+    # 5. current log likelihood
+    unique_beta_current <- unique(beta_current)
+    b_target_current     <- 0
+    for(i in 1:length(unique_beta_current)){
+        b_target_current <- b_target_current + b_f_log(unique_beta_current[i], gamma=1, segmented_SS_current[[i]], gener, b, iota_dist = "exponential")
+    }
 
     # MH
     for(s in 2 : N) {
 
-      # Update theta (Gibbs)
-      # theta <- gibbs_theta(SS_current, iota_dist, par_prior, theta, param, Y)
-      
       # Propose (dbeta, beta | Z) ###########
       # 1. Propose dbeta
       dbeta_new <- draw_dbeta(dbeta_current)
+
       
       # 2. determine the change-point locations.
       segment_start <- c(0) 
@@ -121,11 +120,7 @@ run_DAMCMC_beta <- function(
       unique_beta_new <- unique(beta_new)
       
       # Target density
-      b_target_curr     <- 0 # -2591.426
-      for(i in 1:length(unique_beta_current)){
-          b_target_curr <- b_target_curr + b_f_log(unique_beta_current[i], gamma=1, segmented_SS_current[[i]], gener, b, iota_dist = "exponential")
-      }
-      b_target_new <- 0 # -2790.02
+      b_target_new <- 0
       for(i in 1:length(unique_beta_new)){
           b_target_new <- b_target_new + b_f_log(unique_beta_new[i], gamma=1, segmented_SS_new[[i]], gener, b, iota_dist = "exponential")
       }
@@ -139,7 +134,7 @@ run_DAMCMC_beta <- function(
       b_prior_new <- prior_dbeta(h_hat, dbeta_new) + prior_beta(beta_new, par_prior) # -0.05665495
       
       # MH ratio
-      b_R_log <- b_prior_new - b_prior_current + (1/50)*b_target_new - (1/50)*b_target_curr + b_prop_current - b_prop_new
+      b_R_log <- b_prior_new - b_prior_current + b_target_new - b_target_current + b_prop_current - b_prop_new
       b_R         <- min(1, exp(b_R_log))
       b_accept[s] <- stats::runif(1) < b_R
       
@@ -160,20 +155,20 @@ run_DAMCMC_beta <- function(
       
       # Accept/reject new draws
       if(b_accept[s]) {
+          
           print("iteration accepted!")
-
           print(s)
           
-          dbeta_current          <- dbeta_new
+          dbeta_current <- dbeta_new
           beta_current        <- beta_new
           b_target_current <- b_target_new
           segmented_SS_current <- segmented_SS_new 
       } # end-if
+      
       ##############
       
       ##############
       # Propose (Z | dbeta, beta) ######## (keeping it constant for now.)
-      #x_new    <- rprop_x(theta, Y, gener, b, iota_dist, approx, x_current, rho)
       x_new <- x_current
       ##############
 
@@ -188,6 +183,7 @@ run_DAMCMC_beta <- function(
   return(out)
   }
 ```
+
 
 # Propose (Z | dbeta, beta)
 ```{r}
@@ -235,9 +231,31 @@ run_DAMCMC_beta <- function(
       }
 ```
 
+
+```{r}
+# Sample Run
+sample_run <- run_DAMCMC_beta(
+  x, Y, N = 10000,
+  rho = 1, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 10,
+  par_prior = list(
+    a_beta = 0.01, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ),
+  h_hat = c(0.9,0.9,0.9,0.9,0.9) # P(dbeta_i = 0)
+)
+```
+
+
+MCMC Diagnostics
+
 ```{r}
 # acceptance rate
 sample_run$theta_rate_accept
+# sample values of beta
 sample_run$beta_lst[90:100]
 ```
 
@@ -248,21 +266,21 @@ b_matrix <- do.call(rbind, b_lst)
 b_df <- data.frame(b_matrix)
 ```
 
-# MCMC Trace Plots:
-http://sbfnk.github.io/mfiidd/mcmc_diagnostics.html
+Trace Plots:
+
 ```{r}
-library('coda')
+library('coda') # http://sbfnk.github.io/mfiidd/mcmc_diagnostics.html
 mcmc.trace <- mcmc(b_df)
 summary(mcmc.trace)
 ```
 
-Each Xi corresponds to a component in the beta vector.
+Each Xi corresponds to one component in the beta vector.
 
 ```{r}
 plot(mcmc.trace) # recording new_beta each iteration (whether beta is accepted or not)
 ```
+Autocorrelation Plot:
 
 ```{r}
 autocorr.plot(mcmc.trace)
 ```
-
