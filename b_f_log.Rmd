@@ -9,14 +9,11 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# gener -- True
-# SS -- $SS
-        n_t         n_j integral_SI  integral_I 
-   842.0000    772.0000 345416.5338    775.2242 
-   
-# f_log is one portion of the likelihood on which beta is constant.
+The below functions are for calculating one segment of the likelihood. 
+The first function does NOT take into account the wait time of those individuals that are cut off by t_end, while the second DOES. 
+The first function is to be used with the first n-1 segments while the second will be used for the nth, or last, segment. 
 ```{r}
-#' Log likelihood of the stochastic SIR model
+#' Log likelihood of the stochastic SIR model (not counting wait times that are cut off by t_end)
 #'
 #'
 #' allows non-Markovian dynamics through Weibull-distribution infectious periods (Streftaris and Gibson, 2004)
@@ -25,7 +22,6 @@ knitr::opts_chunk$set(echo = TRUE)
 #' Streftaris, G., & Gibson, G. J. (2004). Bayesian inference for stochastic epidemics in closed populations. Statistical Modelling, 4(1), 63-75.
 #'
 #'
-#' @inheritParams rprop_x
 #'
 #' @param SS sufficient statistics of the current configuration of the latent data
 #'
@@ -58,6 +54,60 @@ b_f_log <- function(beta_i, gamma=1, SS, gener, b, iota_dist = "exponential") {
   # contribution of removals
   loglik_remov <-
     if(iota_dist == "exponential") {
+      sum(stats::dexp(iota_removed   , gamma        , log   = TRUE                    )) # removals before t_end (observed)
+    } else if(iota_dist == "weibull") {
+      sum(dweibull2  (iota_removed   , shape, lambda, log   = TRUE                    ))
+    }
+
+  loglik <- loglik_infec + loglik_remov
+
+  return(loglik)
+
+}
+```
+
+```{r}
+#' Log likelihood for the last segment of the epidemic (counting wait times that are cut off by t_end)
+#'
+#'
+#' allows non-Markovian dynamics through Weibull-distribution infectious periods (Streftaris and Gibson, 2004)
+#' allows generalized SIR process (Severo, 1969)
+#' Severo, N. C. (1969). Generalizations of some stochastic epidemic models. Mathematical Biosciences, 4(3-4), 395-402.
+#' Streftaris, G., & Gibson, G. J. (2004). Bayesian inference for stochastic epidemics in closed populations. Statistical Modelling, 4(1), 63-75.
+#'
+#'
+#'
+#' @param SS sufficient statistics of the current configuration of the latent data
+#'
+#' @return log likelihood
+#' @export
+#'   
+b_f_log_last <- function(beta_i, gamma=1, SS, gener, b, iota_dist = "exponential") {
+
+  # Setup
+  # beta   <- theta[["beta"  ]]
+  # gamma  <- theta[["gamma" ]]
+  #shape  <- theta[["shape" ]]
+  #lambda <- theta[["lambda"]]
+
+  n_T             <- SS[["n_T"            ]]
+  I_tau_T         <- SS[["I_tau_T"        ]]
+  S_tau_T         <- SS[["S_tau_T"        ]]
+  integral_SI     <- SS[["integral_SI"    ]]
+  iota_removed    <- SS[["iota_removed"   ]]
+  iota_infectious <- SS[["iota_infectious"]]
+
+
+  # contribution of infections
+  loglik_infec <- if(gener){
+    n_T * log(beta_i) + sum(log(I_tau_T) - b * log(S_tau_T)) - beta_i  * integral_SI
+  } else {
+    n_T * log(beta_i) + sum(log(I_tau_T)) -beta_i  * integral_SI
+  }
+
+  # contribution of removals
+  loglik_remov <-
+    if(iota_dist == "exponential") {
       sum(stats::dexp(iota_removed   , gamma        , log   = TRUE                    )) + # removals before t_end (observed)
       sum(stats::pexp(iota_infectious, gamma        , log.p = TRUE, lower.tail = FALSE))   # removals after  t_end (not observed)
     } else if(iota_dist == "weibull") {
@@ -72,10 +122,6 @@ b_f_log <- function(beta_i, gamma=1, SS, gener, b, iota_dist = "exponential") {
 }
 ```
 
-```{r}
-# f_log(unique_beta_star[i], theta, segmented_SS[[i]], gener, b, iota_dist)
-b_f_log(beta_i, gamma=1, segmented_SS[[i]], gener, b, iota_dist = "exponential")
-```
 
 
 
