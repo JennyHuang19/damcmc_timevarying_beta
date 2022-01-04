@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Helper functions for proposing new values for (dbeta, beta).
 
-Note: Each vector component in beta_star and beta represents a time unit (e.g. a week)
+Note: Each vector component in beta_star and beta represents a time unit.
 
 Illustration of how the indexing works:
 
@@ -24,37 +24,41 @@ beta [beta_0, beta_1, ...beta_n]
 #' Propose a new delta beta through flipping 1 component of the current dbeta vector at random.
 #'
 #' @param dbeta delta beta vector (current)
+#' @param is_prob boolean of whether to use change dbeta depending on a bernoulli draw with probability h_hat.
+#' @param h_hat the prior inclusion probabilities (i.e. the P(dbeta_i = 1))
 #'
 #' @return new draw of dbeta
 #' @export
 #'
-draw_dbeta <- function(dbeta) {
+draw_dbeta <- function(dbeta, is_prob, h_hat) {
   
-  # Function to flip randomly 1 component in the dbeta vector.
+  # Function to choose randomly 1 component in the dbeta vector.
   u <- sample(1:length(dbeta), 1)
   
-  if(dbeta[u] == 1){
+  if(is_prob){ # h_hat methods
+    changed_dbeta <- rbern(1, (h_hat[u]))
+    dbeta[u] <- changed_dbeta
+  }
+  
+  else{ # uniform flip method
+    if(dbeta[u] == 1){
     dbeta[u] <- 0
+    }
+    else{
+      dbeta[u] <- 1
+    }
   }
-  else{
-    dbeta[u] <- 1
-  }
+  
+  
   return(dbeta)
 }
 ```
 
-
-# if we would like to flip according to a prior probability vector, we can do that using is_prob = TRUE.
-#if(is_prop){
-# changed_dbeta <- rbern(1, prob[u])
-# dbeta[u] <- changed_dbeta
-#}
-
 ```{r}
 # example
-dbeta_j <- c(0,0,0,1,0,0)
+dbeta_j <- c(0,0,1,0,0)
 
-dbeta_star <- draw_dbeta(dbeta_j)
+dbeta_star <- draw_dbeta(dbeta_j, is_prob=TRUE, h_hat = c(0.1,0.1,0.1,0.1,0.1))
 dbeta_star
 ```
 
@@ -104,6 +108,34 @@ segment_start = c(0, 1, 4)
 segment_end = c(1, 4, 6)
 dbeta_star <- c(1,0,0,1,0) # CORRECT: (week 1->2).
 ```
+
+```{r}
+# determine change point locations
+#' Function to determine segment_start and segment_end locations given dbeta
+#'
+#' @param dbeta delta beta vector (current)
+#' @param Y observed data
+#'
+#' @return segment_start and segment_end.
+#' @export
+#'
+cp_locations <- function(dbeta, Y) {
+  
+  segment_start <- c(0) 
+  segment_start <- append(segment_start, which(dbeta == 1))
+  segment_end <- c(Y[["t_end"]])
+  segment_end <- append(which(dbeta == 1), segment_end)
+  
+  return(list("segment_start" = segment_start, "segment_end"=segment_end))
+}
+```
+
+```{r}
+cp_locations(dbeta_new, Y)$segment_start
+cp_locations(dbeta_new, Y)$segment_end
+```
+
+
 
 ```{r}
 # 1. determine the change-point locations.

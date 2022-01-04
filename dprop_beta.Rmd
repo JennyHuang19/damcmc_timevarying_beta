@@ -18,19 +18,19 @@ Helper functions for computing the MH ratio.
 #' EVALUATE PRIOR DENSITY OF DBETA (LOG SPACE: SUM OF BERN.)
 #'
 #' @param dbeta delta beta vector (current)
-#' @param prob prior for P(dbeta_i = 1)
+#' @param h_hat prior for P(dbeta_i = 1)
 #'
 #' @return the prior density evaluated at dbeta
 #' @export
 #'
-prior_dbeta <- function(prob, dbeta){
+prior_dbeta <- function(h_hat, dbeta){
   total_prob <- 0
   for(i in 1:length(dbeta)){
-    if(dbeta[i] == 0){
-      total_prob <- total_prob + log(prob[i]) # h_i = p(dbeta_i = 0)
+    if(dbeta[i] == 1){
+      total_prob <- total_prob + log(h_hat[i]) # h_i = p(dbeta_i = 0)
     }
     else{
-      total_prob <- total_prob + log(1-prob[i])
+      total_prob <- total_prob + log(1-h_hat[i])
     }
   }
   return(total_prob)
@@ -39,7 +39,7 @@ prior_dbeta <- function(prob, dbeta){
 
 ```{r}
 dbeta_j <- c(0,0,0)
-prob <- c(.01,.01,.01)
+prob <- c(.99,.99,.99)
 prior_dbeta(prob, dbeta_j)
 ```
 
@@ -84,6 +84,7 @@ dbeta_star
 ```
 
 # P(dbeta_star | dbeta)
+(note: change later to accomodate draws from bernouli(h_hat))
 ```{r}
 #' EVALUATE PROPOSAL DENSITY OF DBETA (DBETA IS DRAWN FROM A UNIFORM DISTRIBUTION)
 #'
