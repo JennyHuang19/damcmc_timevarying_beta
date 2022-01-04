@@ -1,1 +1,3 @@
+Each Xi corresponds to a component of the beta vector. (Xt = beta_t).
 
+For a detailed interpretation of these outputs, see file algorithm_1_results.Rmd
