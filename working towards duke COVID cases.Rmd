@@ -4,9 +4,12 @@ author: "Jenny Yijian Huang"
 date: "12/22/2021"
 output: html_document
 ---
-The I(t) compartments are larger in size (particularly when gamma is 0.1 or smaller) than what it is in reality.
 
-Usefulness of a change point detection model: Based on visuals of the trajectory alone, it may be incredibly difficult to tell when the transmission rate changed (as b*I(t)). But the time-varying SIR model should be able to tell.
+How can we tell if the curve flattens because of a change in transmission rate (i.e. lockdowns, mask mandates) or because of the natural trajectory of the I(t) curve (i.e. depletion of the S(t) compartment)?
+
+A: The stochastic SIR takes into account the s compartment, so when susceptible individuals have not been sufficiently depleted, the model can attribute the drop in I(t) to a change in transmission rate (due to policy mandates etc.).
+
+Hence, a change point detection model is useful because based on visualizations of the trajectory alone, it is incredibly difficult to pin-point when the transmission rate changed. The time-varying SIR model can help us to locate and quantify these change-points.
 
 https://coronavirus.duke.edu/covid-testing/spring-2021-duke-covid-testing-tracker/ Duke COVID-19 Incidence Data Spr. 2021.
 
