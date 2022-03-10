@@ -1,0 +1,246 @@
+---
+title: "duke COVID cases"
+author: "Jenny Yijian Huang"
+date: "12/22/2021"
+output: html_document
+---
+The I(t) compartments are larger in size (particularly when gamma is 0.1 or smaller) than what it is in reality.
+
+Usefulness of a change point detection model: Based on visuals of the trajectory alone, it may be incredibly difficult to tell when the transmission rate changed (as b*I(t)). But the time-varying SIR model should be able to tell.
+
+https://coronavirus.duke.edu/covid-testing/spring-2021-duke-covid-testing-tracker/ Duke COVID-19 Incidence Data Spr. 2021.
+
+```{r}
+duke_Y$ts <- seq(0, 6, by = 0.4)
+duke_Y <- list("T_k" = c(49, 62, 54, 40, 13, 11, 22, 53, 218, 61, 25, 15, 29, 21, 0), "I0" = 34, "S0" = 25000, "ts" = duke_Y$ts, 
+"t_end" = 6)
+length(duke_Y$T_k)
+length(duke_Y$ts)
+```
+
+Q. How effective was the stay-in-place order Duke implemented March 13th, 2021? Right at the end of week 9 (March 8-14th). By how much did beta decrease?
+
+A ~seven fold decrease in beta from month .
+
+# Finer granularity in specifying change points.
+
+```{r}
+# ts
+duke_Y2 <- list("T_k" = c(49, 62, 54, 40, 13, 11, 22, 53, 218, 61, 25, 15, 29, 21, 0), "I0" = 34, "S0" = 25000, "ts" = seq(0, t_end2, by = 1), 
+"t_end" = 15) # remove the first and last points.
+```
+
+
+```{r}
+plot(x = duke_Y2$ts, y = c(0, duke_Y2$T_k), main="Duke COVID-19 Spr. 2021", sub="Jan. 11-17th to Apr. 19-25th", xlab="Time (each point represents a week)", ylab="New Infection Counts")
+```
+
+
+```{r}
+dk_observations2 <- run_DAMCMC_complete_2(
+  theta0, duke_Y2, N = 10000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 5000,
+  par_prior = list(
+    a_beta = 0.01, b_beta = 0.01,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h_hat = c(0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.01,0.1,0.90,0.1,0.01,0.00,0.00), # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=1
+) 
+```
+When we allow for finer divisions in change point, the latent epidemic I(t) compartment actually reflects the true trajectory more accurately.
+```{r}
+theta0
+```
+
+
+```{r}
+dk_observations6 <- run_DAMCMC_complete_old(
+  theta0, duke_Y2, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 5000,
+  par_prior = list(
+    a_beta = 1, b_beta = 1, # are cp locations sensitive to abeta prior?
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h_hat = c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5), # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=1
+) 
+```
+
+
+```{r}
+analyze_dbeta(dk_observations6$dbeta_lst)
+
+barplot(analyze_dbeta(dk_observations6$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count", 
+ border="blue")
+abline(h=0.5, col="blue", lty="dashed", lwd=4)
+```
+
+Plot results
+```{r}
+plot(x = duke_Y2$ts[-1]-0.5, y = duke_Y2$T_k, main="Duke COVID-19 Spr. 2021", sub="Jan. 11-17th to Apr. 19-25th", xlab="Time (each point represents a week)", ylab="New Infection Counts") # the points are plotted in the middle of week (i.e. week 1 results located at 0.5)
+abline(v=c(7,9),lwd=2,col="red")
+```
+
+# Create Dataframe from raw dbeta and beta lists for frequency plot of configurations.
+```{r}
+create_df_dbeta <- function(mcmc_output_dbeta, mcmc_output_beta, burnin, strlastX) {
+  # strlastX: string value of the last dbeta (change point) index.
+  temp_df <- mcmc_output_dbeta[burnin:length(mcmc_output_dbeta)]
+  temp_df <- data.frame(t(sapply(temp_df,c)))
+  dbeta_lst_df <- temp_df %>% 
+    mutate(ID = burnin:length(mcmc_output_dbeta)) %>% 
+    unite("delta_beta", X1:strlastX, remove=FALSE)
+
+  beta_lst_raw <- mcmc_output_beta[burnin:length(mcmc_output_beta)]
+  beta_lst_df <- data.frame(t(sapply(beta_lst_raw,c)))
+  beta_lst_df <- beta_lst_df %>% 
+    mutate(ID = burnin:length(mcmc_output_beta))
+  
+  complete_tibble <- merge(dbeta_lst_df, beta_lst_df, by="ID")
+
+  return(complete_tibble)
+}
+
+covid_df <- create_df_dbeta(dk_observations6$dbeta_lst, dk_observations6$beta_lst, burnin, "X14")
+```
+
+# Frequencies of the most common configurations
+```{r}
+covid_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(10) %>% 
+  ggplot(data = ., aes(x = delta_beta, y = freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Change Point Configurations", y = "Frequency", x = "Configuration")+ 
+  theme(text = element_text(size=10), axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+covid_t5 <- covid_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(5)
+covid_t5
+```
+
+```{r}
+# Colors
+cols <- c("red", "orange", "grey", "grey", "yellow") # INDEXING ISSUE.
+
+# Basic line plot with points
+ggplot(data=covid_M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_beta)) +
+  geom_step() +
+  # geom_line()+
+  geom_point() +
+  scale_color_manual(values = cols) +
+  labs(title = "Transmission Rate of COVID-19", subtitle="Top 5 Configurations", y = "mean transmission rate", x = "Week", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(0,15,1))
+```
+
+# Compute the mean betas of the top configurations.
+```{r}
+covid_top_deltabetas <- covid_df %>% 
+  filter(delta_beta %in% covid_t5$delta_beta)
+
+covid_mean_betas <- covid_top_deltabetas %>%
+  select(delta_beta, X1.y:X15) %>%
+  group_by(delta_beta) %>% 
+  summarise(across(everything(), mean))
+
+# flip from cartesian to index. https://tidyr.tidyverse.org/reference/pivot_longer.html
+covid_M <- covid_mean_betas %>% 
+  pivot_longer(!delta_beta, names_to = "time_unit", values_to = "beta")
+
+#preserve the order of time units.
+covid_M$time_unit <- factor(covid_M$time_unit, levels=unique(covid_M$time_unit))
+```
+
+
+
+# new way of dprop_x
+
+```{r}
+dk_observations9 <- run_DAMCMC_complete_old(
+  theta0, duke_Y2, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 5000,
+  par_prior = list(
+    a_beta = 1, b_beta = 1, # are cp locations sensitive to abeta prior?
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h_hat = c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5), # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=1
+) 
+```
+
+```{r}
+analyze_dbeta(dk_observations2$dbeta_lst)
+
+barplot(analyze_dbeta(dk_observations2$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count", 
+ border="blue")
+abline(h=0.9, col="blue", lty="dashed", lwd=4)
+```
+
+
+# A flat prior allowing frequent changes in beta
+
+Why is it that when we allow changes for finer intervals that the I(t) compartment becomes more accurate throughout
+```{r}
+dk_observations3 <- run_DAMCMC_complete_2(
+  theta0, duke_Y2, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 5000,
+  par_prior = list(
+    a_beta = 0.01, b_beta = 0.01,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h_hat = c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.0), # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=1/3 # 3 days to quarantine.
+) 
+```
+
+
+```{r}
+analyze_dbeta(dk_observations3$dbeta_lst)
+
+barplot(analyze_dbeta(dk_observations3$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count", 
+ border="blue")
+abline(h=0.5, col="blue", lty="dashed", lwd=4)
+```
+Beginning to week: 7, 9
+
+Plot results
+```{r}
+plot(x = duke_Y2$ts, y = c(0, duke_Y2$T_k), main="Duke COVID-19 Spr. 2021", sub="Jan. 11-17th to Apr. 19-25th", xlab="Time (each point represents a week)", ylab="New Infection Counts")
+abline(v=c(7,9),lwd=2,col="red")
+```
+
+```{r}
+burnin <- 501
+mcmc.trace.covid.fine <- create_tp_data(dk_observations3$beta_lst[burnin:20000])
+summary(mcmc.trace.covid.fine)
+```
+
+Week 7 to 8 saw a 3.038752 fold increase in Beta;
+Week 9 to 10 saw a 5.223502 fold decrease in Beta.
