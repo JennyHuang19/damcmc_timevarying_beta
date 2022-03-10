@@ -1,0 +1,639 @@
+---
+title: 'ebola data'
+author: "Jenny Yijian Huang"
+date: "2/11/2022"
+output: html_document
+---
+
+# Ebola incidence data.
+Simulating data from the parameter results.
+
+# Reading in data
+```{r}
+path_data = "Ebola/Guinea_modified.csv"
+```
+
+```{r}
+# Ebola Data
+d <- readr::read_csv(
+  path_data,
+  col_types = readr::cols(
+    .default            = readr::col_double(),
+    Location            = readr::col_character(),
+    `Ebola data source` = readr::col_character(),
+    `Indicator type`    = readr::col_character(),
+    `Case definition`   = readr::col_character()
+  )
+) %>%
+  dplyr::select(-(2:4)) %>%
+  dplyr::group_by(.data$Location) %>%
+  dplyr::summarize_all(sum) %>%
+  tibble::column_to_rownames("Location") %>%
+  as.matrix
+
+nam <- dimnames(d)
+dimnames(d) <- NULL
+#d[, 1 : 10]
+T_k_ebola <- d[which(nam[[1]] == "GUECKEDOU"), ] # Ebola started in the GUECKEDOU prefecture
+
+# # Observed data (incidence)
+print(T_k_ebola)
+print(nam[[1]][14])
+print(nam[[2]][c(1:3, 71:73)])
+barplot(T_k_ebola, xlab = "Week")
+
+K     <- length(T_k_ebola) # number of time periods
+t_end <- 7 * K
+ts    <- seq(0, t_end, by = 7) # observation schedule
+
+# Observed data
+S0 <- 291823 # https://en.wikipedia.org/wiki/Prefectures_of_Guinea
+Y_ebola <- list(T_k = T_k_ebola, F_k = NULL, I0 = I0, S0 = S0, ts = ts, t_end = t_end)
+```
+
+```{r}
+d[which(nam[[1]] == "GUECKEDOU"), ]
+d[which(nam[[1]] == "GUECKEDOU"), ][68]
+```
+
+
+```{r}
+plot(x = Y_ebola$ts, y = c(0, Y_ebola$T_k), main="Ebola Incidence Observed", sub="each point one month", xlab="Time", ylab="New Infection Counts")
+```
+
+
+# run original constant beta PD-SIR Code
+
+```{r}
+#' Experiment 5: Analysis of the Ebola data
+#'
+#' @inheritParams experiment_1_proof_of_concept
+#'
+#' @param theta_0 intial parameter values
+#' @param path_data path to the data file
+#'
+#' @return list containing the parameters, observed data, Markov chain and run time of the algorithm
+#' @export
+experiment_5_ebola <- function(
+  I0 = 5, theta_0 = list(R0 = 1, gamma = 1e-1),
+  N = 1e5, thin = 10, rho = 1,
+  param = "bg", approx = "ldp",
+  iota_dist = "exponential",
+  gener = FALSE, b = 1/2,
+  path_data = "Input/Ebola/Guinea_modified.csv"
+) {
+
+  #
+  # Ebola Data
+
+  d <- readr::read_csv(
+    path_data,
+    col_types = readr::cols(
+      .default            = readr::col_double(),
+      Location            = readr::col_character(),
+      `Ebola data source` = readr::col_character(),
+      `Indicator type`    = readr::col_character(),
+      `Case definition`   = readr::col_character()
+    )
+  ) %>%
+    dplyr::select(-(2:4)) %>%
+    dplyr::group_by(.data$Location) %>%
+    dplyr::summarize_all(sum) %>%
+    tibble::column_to_rownames("Location") %>%
+    as.matrix
+
+  nam <- dimnames(d)
+  dimnames(d) <- NULL
+  #d[, 1 : 10]
+  T_k_ebola <- d[which(nam[[1]] == "GUECKEDOU"), ] # Ebola started in the GUECKEDOU prefecture
+
+  K     <- length(T_k_ebola) # number of time periods
+  t_end <- 7 * K
+  ts    <- seq(0, t_end, by = 7) # observation schedule
+
+  # Observed data
+  S0 <- 291823 # https://en.wikipedia.org/wiki/Prefectures_of_Guinea
+  Y_ebola <- list(T_k = T_k_ebola, F_k = NULL, I0 = I0, S0 = S0, ts = ts, t_end = t_end)
+
+
+  MC <- run_DAMCMC(
+    Y_ebola, N,
+    rho, param, approx,
+    iota_dist, gener, b,
+    thin, theta_0
+  )
+
+
+
+  return(list(Y = Y_ebola, MC = MC))
+
+}
+```
+
+```{r}
+ebola_pdsir <- experiment_5_ebola(
+  I0 = 5, theta_0 = list(R0 = 1, gamma = 1e-1),
+  N = 20000, thin = 10, rho = 0.2,
+  param = "bg", approx = "ldp",
+  iota_dist = "exponential",
+  gener = FALSE, b = 1/2,
+  path_data = "Ebola/Guinea_modified.csv"
+)
+```
+
+```{r}
+ebola_beta <- numeric(length(ebola_pdsir$MC$theta))
+for(j in 1:length(ebola_pdsir$MC$theta) ){
+  ebola_beta
+}
+ebola_pdsir$MC$theta[[j]]$beta
+```
+
+```{r}
+analyze_ebola_pdsir <- experiment_5_output(
+  ebola_pdsir, iota_dist = "exponential", path, plot_id = "E5",
+  burnin = 0, thin = 1, n_max = NULL
+  )
+```
+
+```{r}
+#' Analyze output of MCMC run from Experiment 5
+#'
+#' @inheritParams experiment_1_output_analysis
+#' @inheritParams experiment_5_ebola
+#'
+#' @param output_E5 object returned by the function experiment_5_ebola
+#'
+#' @return figures and list of summary statistics
+#' @export
+#'
+experiment_5_output <- function(
+  output_E5, iota_dist = "exponential", path, plot_id = "E5",
+  burnin = 0, thin = 1, n_max = NULL
+  ) {
+
+  MC <- output_E5[["MC"]]
+  Y  <- output_E5[["Y" ]]
+
+  summary <- analyze_MCMC(
+    MC, burnin, thin, n_max, iota_dist,
+    plot_id = plot_id, path = NULL,
+    Y = Y, coverage = FALSE
+  )
+
+  return(summary)
+
+}
+```
+
+
+```{r}
+original_MC <- run_DAMCMC(
+    Y_ebola, N=20000,
+    rho=0.2, param = "bg", approx = "ldp",
+    iota_dist = "exponential", gener = FALSE, b = 1/2,
+    thin = 1, theta_0 = list(R0 = 1, gamma = 1e-1),
+    print_i = FALSE,  save_SS = FALSE,
+    par_prior = list(
+      a_beta = 0.01, b_beta = 1,
+      a_gamma = 1, b_gamma = 1,
+      a_R0 = 2, b_R0 = 2,
+      a_lambda = 1, b_lambda = 1
+  ),
+  plt = 1000
+  )
+```
+
+```{r}
+original_MC$rate_accept
+```
+
+```{r}
+# Create dataframe
+ebola_constant_beta <- create_mcmc_df(original_MC,1,1000)
+```
+
+```{r}
+# Posterior Means
+ebola_constant_beta %>%
+    dplyr::select(- .data$Iteration, - .data$loglik) %>%
+    {tibble::tibble(
+      var  = colnames(.),
+      mean = colMeans(.)
+    )}
+
+ESS         = coda::effectiveSize(coda::mcmc(ebola_constant_beta))
+ESS
+``` 
+
+```{r}
+# Plot constant beta results
+print(draw_tp(ebola_constant_beta, "beta"))
+print(draw_histogram(ebola_constant_beta, "beta"))
+print(draw_acf(ebola_constant_beta, "beta", 200))
+```
+
+
+# Change Point D-A MCMC
+
+# Set up condensed version of ebola data.
+```{r}
+T_k_ebola_short <- c()
+for(j in seq(from=1, to=length(T_k_ebola), by=5)){
+  # print(j)
+  right <- j+4
+  # print(cut)
+  T_k_ebola_short <- append(T_k_ebola_short, sum(T_k_ebola[j:right]))
+  # print(T_k_ebola_short)
+}
+T_k_ebola_short
+T_k_ebola_short <- T_k_ebola_short[1:12]
+```
+
+```{r}
+K     <- length(T_k_ebola_short) # number of time periods
+
+Y_ebola_cp <- list(T_k = T_k_ebola_short, F_k = NULL, I0 = 5, S0 = 291823, ts = seq(0, 12, by = 1), t_end = 12)
+```
+
+```{r}
+plot(x = Y_ebola_cp$ts, y = c(0, Y_ebola_cp$T_k), main="Ebola Incidence Observed", sub="each point one month", xlab="Time", ylab="New Infection Counts")
+```
+
+
+```{r}
+ebola_theta0 <- list("R0" = 1, "beta" = 3e-7, "gamma" = 1e-1, "shape"=1, "lambda"=1)
+```
+
+# Run change point algorithm
+```{r}
+ebola_output <- run_DAMCMC_complete_2(
+  ebola_theta0, Y_ebola_cp, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 500,
+  par_prior = list(
+    a_beta = 0.01, b_beta = 0.01,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h_hat = c(0.50,0.50,0.50,0.50,0.50,0.50,0.50,0.50,0.50,0.50,0.0,0.0), # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=0.1
+)
+```
+
+```{r}
+burnin <- 501
+mcmc.trace.ebola <- create_tp_data(ebola_output$beta_lst[burnin:20000])
+summary(mcmc.trace.ebola)
+```
+
+```{r}
+plot(mcmc.trace.ebola)
+```
+
+```{r}
+ebola_output$theta_rate_accept # theta = (dbeta, beta).
+ebola_output$x_rate_accept # latent data.
+```
+
+
+```{r}
+analyze_dbeta(ebola_output$dbeta_lst)[[1]]
+unique(ebola_output$dbeta_lst) # frequencies of each.
+```
+
+# Create Dataframe from raw dbeta and beta lists for frequency plot of configurations.
+```{r}
+create_df_dbeta <- function(mcmc_output_dbeta, mcmc_output_beta, burnin, strlastX) {
+  # strlastX: string value of the last dbeta (change point) index.
+  temp_df <- mcmc_output_dbeta[burnin:length(mcmc_output_dbeta)]
+  temp_df <- data.frame(t(sapply(temp_df,c)))
+  dbeta_lst_df <- temp_df %>% 
+    mutate(ID = burnin:length(mcmc_output_dbeta)) %>% 
+    unite("delta_beta", X1:strlastX, remove=FALSE)
+
+  beta_lst_raw <- mcmc_output_beta[burnin:length(mcmc_output_beta)]
+  beta_lst_df <- data.frame(t(sapply(beta_lst_raw,c)))
+  beta_lst_df <- beta_lst_df %>% 
+    mutate(ID = burnin:length(mcmc_output_beta))
+  
+  complete_tibble <- merge(dbeta_lst_df, beta_lst_df, by="ID")
+
+  return(complete_tibble)
+}
+
+config_df <- create_df_dbeta(ebola_output$dbeta_lst, ebola_output$beta_lst, burnin, "X12")
+```
+
+# Frequencies of the most common configurations
+```{r}
+config_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(10) %>% 
+  ggplot(data = ., aes(x = delta_beta, y = freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Configurations", y = "Frequency", x = "Configuration")+ 
+  theme(text = element_text(size=10), axis.text.x = element_text(angle = 90))
+```
+```{r}
+top_five <- config_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(5)
+top_five
+```
+
+# Compute the mean betas of the top configurations.
+```{r}
+top_deltabetas <- config_df %>% 
+  filter(delta_beta %in% top_five$delta_beta)
+
+mean_betas <- top_deltabetas %>%
+  select(delta_beta, X1.y:X13) %>%
+  group_by(delta_beta) %>% 
+  summarise(across(everything(), mean))
+
+# flip from cartesian to index. https://tidyr.tidyverse.org/reference/pivot_longer.html
+M <- mean_betas %>% 
+  pivot_longer(!delta_beta, names_to = "time_unit", values_to = "beta")
+
+#preserve the order of time units.
+M$time_unit <- factor(M$time_unit, levels=unique(M$time_unit))
+```
+
+```{r}
+# Colors
+cols <- c("grey", "orange", "red", "yellow", "grey")
+
+# Basic line plot with points
+ggplot(data=M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_beta)) +
+  geom_step() +
+  # geom_line()+
+  geom_point() +
+  scale_color_manual(values = cols) +
+  labs(title = "Transmission Rate of Ebola Outbreak", subtitle="Mean of Top 5 Configurations", y = "Beta value", x = "Time unit")
+
+```
+# top three # 1: 0_0_1_0_1_0_0_1_0_1_0_0, 2: 0_0_1_0_1_0_0_1_0_0_0_0, 3: 0_0_1_0_1_0_0_1_1_0_0_0
+
+# spagetti plot of the overall (every 100 iterations)
+
+
+```{r}
+plot(x = Y_ebola_cp$ts, y = c(0, Y_ebola_cp$T_k), main="Ebola Incidence Observed", sub="each point one month", xlab="Time", ylab="New Infection Counts")
+abline(v=c(3,5,8,10),lwd=2,col="red") # top configuration
+```
+
+
+
+```{r}
+analyze_dbeta(ebola_output$dbeta_lst)
+
+barplot(analyze_dbeta(ebola_output$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count", names.arg=c("Interval 1","Interval 2","Interval 3","Interval 4","Interval 5", "Interval 6","Interval 7","Interval 8","Interval 9","Interval 10","Interval 11","Interval 12"), 
+ border="blue")
+abline(h=0.5, col="blue", lty="dashed", lwd=4)
+```
+
+# Create dataframe
+```{r}
+create_mcmc_list <- function(beta_list_untidy){
+  # make each beta into a plain list
+  all_beta <- list()
+  
+  for(k in 1:length(beta_list_untidy[[1]])){
+    index <- paste("beta", k, sep="_")
+    beta_i = unlist(lapply(beta_list_untidy, `[[`, k)) # beta k
+    all_beta <- append(all_beta, list(beta_i))
+  }
+
+  return(all_beta)
+}
+
+beta_list_ebola <- create_mcmc_list(ebola_output$beta_lst[burnin:20000])
+length(beta_list_ebola)
+```
+
+```{r}
+# combine all beta lists into a dataframe.
+beta_ebola_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(1:19500)), Beta1 = beta_list_ebola[1], Beta2 = beta_list_ebola[2], Beta3 = beta_list_ebola[3], Beta4 = beta_list_ebola[4], Beta5 = beta_list_ebola[5], Beta6 = beta_list_ebola[6], Beta7 = beta_list_ebola[7],Beta8 = beta_list_ebola[8], Beta9 = beta_list_ebola[9], Beta10 = beta_list_ebola[10], Beta11 = beta_list_ebola[11], Beta12 = beta_list_ebola[12], Beta13 = beta_list_ebola[13]))
+beta_ebola_tidy <- beta_ebola_tidy %>% 
+  remove_burnin(1000)
+```
+
+```{r}
+# Posterior means
+beta_ebola_tidy %>%
+  dplyr::select(- .data$Iteration) %>%
+  {tibble::tibble(
+    var  = colnames(.),
+    mean = colMeans(.)
+  )}
+
+# ESS
+ESS = coda::effectiveSize(coda::mcmc(beta_ebola_tidy))
+ESS
+```
+
+```{r}
+# plot results in a format similar to PDSIR code.
+vars <- c("Beta1", "Beta2","Beta3","Beta4","Beta5","Beta6")
+
+for(var in vars)
+  print(draw_tp(beta_ebola_tidy, var))
+for(var in vars)
+  print(draw_histogram(beta_ebola_tidy, var))
+for(var in vars)
+  print(draw_acf(beta_ebola_tidy, var, 200))
+```
+Why are plots mixing well in the change point algorithm? Does it have to do with keepign a constant beta?
+
+# Finer grained time series.
+```{r}
+Y_ebola$ts
+length(Y_ebola$ts)
+
+h1 <- rep(0.5, 5)
+h2 <- rep(0.5, 47)
+h3 <- rep(0.5, 21)
+
+h <- c(h1, h2, h3)
+h
+length(h)
+```
+
+```{r}
+Y_cp$ts <- seq(0,73,1)
+Y_cp
+```
+
+
+```{r}
+ebola_cp <- run_DAMCMC_complete(
+  ebola_theta0, Y_cp, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 500,
+  par_prior = list(
+    a_beta = 1, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h, # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=0.8
+)
+```
+
+
+```{r}
+analyze_dbeta(ebola_cp$dbeta_lst)[[1]]
+length(unique(ebola_cp$dbeta_lst)) # frequencies of each.
+unique(ebola_cp$dbeta_lst)[180:188]
+```
+
+```{r}
+analyze_dbeta(ebola_beta_5$dbeta_lst)[[1]]
+unique(ebola_beta_5$dbeta_lst)[300:310]
+```
+
+
+# Create Dataframe from raw dbeta and beta lists for frequency plot of configurations.
+```{r}
+config_df <- create_df_dbeta(ebola_cp$dbeta_lst, ebola_cp$beta_lst, burnin, "X73")
+```
+# Frequencies of the most common configurations
+```{r fig.width=5, fig.height=10}
+config_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(10) %>% 
+  ggplot(data = ., aes(x = delta_beta, y = freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Configurations", y = "Frequency", x = "Configuration")+ 
+  theme(text = element_text(size=5), axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+top_five <- config_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(5)
+top_five
+```
+
+# Compute the mean betas of the top configurations.
+```{r}
+top_deltabetas <- config_df %>% 
+  filter(delta_beta %in% top_five$delta_beta)
+
+mean_betas <- top_deltabetas %>%
+  select(delta_beta, X1.y:X60.y) %>%
+  group_by(delta_beta) %>% 
+  summarise(across(everything(), mean))
+
+# flip from cartesian to index. https://tidyr.tidyverse.org/reference/pivot_longer.html
+M <- mean_betas %>% 
+  pivot_longer(!delta_beta, names_to = "time_unit", values_to = "beta")
+
+#preserve the order of time units.
+M$time_unit <- factor(M$time_unit, levels=unique(M$time_unit))
+```
+
+```{r fig.width=6, fig.height=5}
+# Color selection
+cols <- c("red", "orange", "yellow", "green", "blue")
+
+# Basic line plot with points
+ggplot(data=M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_beta)) +
+  # geom_step() +
+  geom_line()+
+  geom_point() +
+  scale_color_manual(values = cols) +
+  labs(title = "Transmission Rate of Ebola Outbreak", subtitle="Mean of Top 5 Configurations", y = "Beta value", x = "Time unit")+ 
+  theme(legend.position="none") +
+  theme(text = element_text(size=10), axis.text.x = element_text(angle = 90))
+```
+
+
+```{r}
+analyze_dbeta(ebola_cp$dbeta_lst)
+
+barplot(analyze_dbeta(ebola_cp$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count", 
+ border="blue")
+abline(h=0.5, col="blue", lty="dashed", lwd=4) # change points around 15,40,71
+```
+
+
+```{r}
+ebola_cp$theta_rate_accept
+ebola_cp$x_rate_accept
+```
+
+
+```{r}
+burnin <- 501
+mcmc.trace.ebolacp <- create_tp_data(ebola_cp$beta_lst[burnin:20000])
+summary(mcmc.trace.ebolacp)
+```
+
+```{r}
+plot(x = Y_cp$ts[-73]+0.5, y = c(Y_cp$T_k), main="Ebola", sub="week", xlab="Time", ylab="New Infection Counts")
+# abline(v=c(15,41,52),lwd=2,col="red") # dots should be 0.5 shifted.
+abline(v=c(15,40,71),lwd=2,col="red")
+```
+
+
+```{r}
+ebola_cp_gamma <- run_DAMCMC_complete_bug(
+  ebola_theta0, Y_cp, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 500,
+  par_prior = list(
+    a_beta = 1, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h, # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=1
+)
+```
+
+```{r}
+analyze_dbeta(ebola_cp_gamma$dbeta_lst)
+
+barplot(analyze_dbeta(ebola_cp_gamma$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count", 
+ border="blue")
+abline(h=0.5, col="blue", lty="dashed", lwd=4)
+```
+# intervals too short: additional change points due to 
+
+
+```{r}
+ebola_cp_gamma <- run_DAMCMC_complete_bug(
+  ebola_theta0, Y_cp, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 500,
+  par_prior = list(
+    a_beta = .01, b_beta = .01,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h, # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=1
+)
+```
+
