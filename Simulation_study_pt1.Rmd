@@ -1,0 +1,192 @@
+---
+title: "Prior sensitivity analysis"
+author: "Jenny Yijian Huang"
+date: "1/23/2022"
+output: html_document
+---
+
+Simulation Study:
+
+# First, we simulate an epidemic with change points in R0 at weeks 2,4 using Gillespie's algorithm.
+```{r}
+change_point_data <- MLE_test(
+  S0 = 1e3, I0 = 1e1, t_end = 6,
+  theta = list(R0 = c(2.5, 1.5, 3.5), gamma = 1, lambda = 1, shape = 1),
+  change_day = c(2,4),
+  iota_dist = "exponential",
+  gener = FALSE, b = 1/2,
+  E0 = 0, type = "SIR" # "SEIR"
+)
+cp_data <- change_point_data$x
+
+change_point_data$MLE
+```
+
+# Below, we visualize the I(t) compartment over time.
+```{r}
+plot(x = change_point_data$t[1:1500], y = change_point_data$I[1:1500], main="Epidemic Trajectory",
+   xlab="Time", ylab="I(t)")
+```
+
+
+beta_i = governs the time unit from [i, i+1].
+delta_i = marks a change point located at i.
+
+# We will use only the partially observed (incidence) data as input to our DA-MCMC.
+# (LATER) vary observation schedule.
+```{r}
+cp_Y <- observed_data(change_point_data, K=10)
+plot(x = cp_Y$ts, y = c(0, cp_Y$T_k), main="Observed Counts", xlab="Time", ylab="New Infections")
+```
+
+# We see that the chain still converges to the same estimate if we initialize beta to start at a poor initial value.
+```{r}
+theta0 = list(R0 = 1, beta=0.001, lambda = 1, shape = 1, gamma = 1)
+```
+
+```{r}
+test_6 <- run_DAMCMC_complete_old(
+  theta0, cp_Y, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 2500,
+  par_prior = list(
+    a_beta = 1, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), h_hat = c(0.5,0.5,0.5,0.5,0.5), # P(dbeta_i = 1)
+  x_b_ratio = 2,
+  gamma=1
+  )
+```
+
+```{r}
+print(analyze_dbeta(test_6$dbeta_lst))
+
+barplot(analyze_dbeta(test_6$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count", names.arg=c("Delta One","Delta Two","Delta Three","Delta Four","Delta Five"), 
+ border="blue")
+abline(h=1/2, col="blue", lty="dashed", lwd=4)
+```
+
+```{r}
+burnin = 1000
+library(tidyverse)
+sim_df <- create_df_dbeta(test_6$dbeta_lst, test_6$beta_lst, burnin, "X5")
+sim_df
+```
+# Frequencies of the most common configurations
+```{r}
+sim_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(10) %>% 
+  ggplot(data = ., aes(x = delta_beta, y = freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Change Point Configurations", y = "Frequency", x = "Configuration")+ 
+  theme(text = element_text(size=10), axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+sim_t5 <- sim_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(5)
+sim_t5
+```
+
+
+# Compute the mean betas of the top configurations.
+```{r}
+sim_top_deltabetas <- sim_df %>% 
+  filter(delta_beta %in% sim_t5$delta_beta)
+
+sim_mean_betas <- sim_top_deltabetas %>%
+  select(delta_beta, X1.y:X6) %>%
+  group_by(delta_beta) %>% 
+  summarise(across(everything(), mean)) %>% 
+  mutate(X7 = X6) # add the stopping week
+
+# flip from cartesian to index. https://tidyr.tidyverse.org/reference/pivot_longer.html
+sim_M <- sim_mean_betas %>% 
+  pivot_longer(!delta_beta, names_to = "time_unit", values_to = "beta")
+
+#preserve the order of time units.
+sim_M$time_unit <- factor(sim_M$time_unit, levels=unique(sim_M$time_unit))
+```
+
+```{r}
+# Colors
+cols <- c("orange", "red", "yellow", "grey", "grey") # INDEXING ISSUE.
+
+# Basic line plot with points
+ggplot(data=sim_M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_beta)) +
+  geom_step() +
+  # geom_line()+
+  geom_point() +
+  scale_color_manual(values = cols) +
+  labs(title = "Transmission Rate", subtitle="Top 5 Configurations", y = "transmission rate (Mean)", x = "Week", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(0,6,1)) # add week 6 in.
+```
+
+```{r}
+plot(x = cp_Y$ts, y = c(0, cp_Y$T_k), main="Observed Counts", xlab="Week", ylab="New Infections")
+abline(v=c(2,4),lwd=2,col="red")
+```
+
+
+# Create dataframe
+```{r}
+sim_beta_list <- create_mcmc_list(test_6$beta_lst[burnin:20000])
+length(sim_beta_list)
+```
+
+```{r}
+# combine all beta lists into a dataframe.
+beta_sim_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(1:19001)), Beta1 = sim_beta_list[1], Beta2 = sim_beta_list[2], Beta3 = sim_beta_list[3], Beta4 = sim_beta_list[4], Beta5 = sim_beta_list[5], Beta6 = sim_beta_list[6]))
+beta_sim_tidy <- beta_sim_tidy %>% 
+  remove_burnin(1000)
+```
+
+```{r}
+# Posterior means
+means <- beta_sim_tidy %>%
+  dplyr::select(- .data$Iteration) %>%
+  {tibble::tibble(
+    var  = colnames(.),
+    mean = colMeans(.),
+  )}
+
+# ESS
+ESS = coda::effectiveSize(coda::mcmc(beta_sim_tidy))
+ESS # ESS is higher when we correctly specify the model (eg allow for change points.)
+```
+
+```{r}
+upper95 <- beta_sim_tidy %>%
+  summarise_at(2:7, ~ quantile(., probs = c(0.975))) %>%
+  gather("var", "q97.5")
+
+lower95 <- beta_sim_tidy %>%
+  summarise_at(2:7, ~ quantile(., probs = c(0.025))) %>%
+  gather("var", "q2.5")
+
+CI <- inner_join(lower95, upper95, by = "var")
+posterior_df <- inner_join(means, CI, by = "var")
+posterior_df
+```
+```{r}
+# plot results in a format similar to PDSIR code.
+vars <- c("Beta1", "Beta2","Beta3","Beta4","Beta5","Beta6")
+
+for(var in vars)
+  print(draw_tp(beta_sim_tidy, var)) # burn in.
+for(var in vars)
+  print(draw_histogram(beta_sim_tidy, var))
+for(var in vars)
+  print(draw_acf(beta_sim_tidy, var, 200))
+```
+
