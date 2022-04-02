@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Markov Chain Model Test"
 author: "Jenny Yijian Huang"
 date: "4/1/2022"
 output: html_document
@@ -10,14 +10,14 @@ This script tests out the Markov chain model for Delta using a short simulation 
 # Trying out different hyperparameters for the beta prior.
 ```{r}
 x = seq(0,1,0.05)
-plot(x, y = dbeta(x, 1,10))
+plot(x, y = dbeta(x, 1,1))
 ```
 
 
 ```{r}
 test_6 <- run_DAMCMC_complete_h6(
   theta0, cp_Y, N = 20000,
-  rho = 0.2, param = "bg", approx = "ldp",
+  rho = 0.15, param = "bg", approx = "ldp",
   iota_dist = "exponential", gener = FALSE, b = 1/2,
   thin = 1, plt = 2500,
   par_prior = list(
@@ -25,8 +25,8 @@ test_6 <- run_DAMCMC_complete_h6(
     a_gamma = 1, b_gamma = 1,
     a_R0 = 2, b_R0 = 2,
     a_lambda = 1, b_lambda = 1,
-    a_pi11 = 1, b_pi11 = 10,
-    a_pi01 = 1, b_pi01 = 10
+    a_pi11 = 1, b_pi11 = 1,
+    a_pi01 = 1, b_pi01 = 1
   ), 
   # h_hat = c(0.5,0.5,0.5,0.5,0.5), # P(dbeta_i = 1)
   length_delta = 5,
@@ -187,6 +187,23 @@ for(var in vars)
 beta_1_MLE  beta_2_MLE  beta_3_MLE 
 0.002645833 0.001425511 0.003639395
 
+```{r}
+# Create dataframe for Pi
+Pi_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(burnin:20000)), Pi01 = list(test_6$pi01_lst[burnin:20000]), Pi11 = list(test_6$pi11_lst[burnin:20000]) ))
+Pi_tidy
+```
+```{r}
+# Traceplots, Posterior Histograms for transition probability matrix
+draw_tp(Pi_tidy, 'Pi01',5)
+draw_histogram(Pi_tidy, 'Pi01')
+draw_acf(Pi_tidy, 'Pi01', 200)
+
+draw_tp(Pi_tidy, 'Pi11',10)
+draw_histogram(Pi_tidy, 'Pi11')
+draw_acf(Pi_tidy, 'Pi11', 200)
+```
+
+
 ## Complete D-A MCMC with Markov Chain
 
 ```{r}
@@ -315,7 +332,7 @@ run_DAMCMC_complete_h6 <- function(
       b_R         <- min(1, exp(b_R_log))
       b_accept[s] <- stats::runif(1) < b_R
       
-      ### Debugging Inf values
+      ### For Debugging Purposes Inf values
       if(is.na(b_accept[s]) ){
         print(list("b_target_new" = b_target_new, "b_prior_new" = b_prior_new, "b_prop_new" = b_prop_new,
                     "f_pi_new" = f_pi_func(Pi_new, dbeta_new, par_prior), "f_delta_new" = f_dbeta_func(dbeta_new, Pi_new, u_new), 
