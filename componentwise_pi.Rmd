@@ -1,0 +1,101 @@
+---
+title: "componentwise_pi"
+author: "Jenny Yijian Huang"
+date: "4/17/2022"
+output: html_document
+---
+
+```{r}
+test_componentwise_proposal <- run_DAMCMC_complete_componenth6(
+  theta0, cp_thin_Y, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 5000,
+  par_prior = list(
+    a_beta = 1, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ), length_delta = 79,
+  a_pi = rep(100, 79),
+  b_pi = rep(100, 79),
+  num_iter_pi = 50,
+  x_b_ratio = 2,
+  gamma=1/(79/6)
+  ) 
+```
+
+
+```{r}
+# acceptance rate
+test_componentwise_proposal$theta_rate_accept
+```
+
+# The results are very dependent on the simulated trajectory (regardless of true parameter values). Maybe this algorithm does not quite penalize on change points one after the other, as we see the the change point locations near week 4 both very high proportions. But it could be that it places the change point at 70 for some configurations and 71 for others.
+
+# when we let the data overwhelm the prior, it indicates 0 change points.
+```{r}
+print(analyze_dbeta(test_componentwise_proposal$dbeta_lst))
+
+barplot(analyze_dbeta(test_componentwise_proposal$dbeta_lst)[[2]], main="Change Point Locations", xlab="Change Point Location",  
+ ylab="Proportion of MCMC Samples", 
+ border="blue")
+abline(h=1/2, col="blue", lty="dashed", lwd=4)
+```
+```{r}
+length(test_componentwise_proposal$pi_lst)
+pi_out <- test_componentwise_proposal$pi_lst
+```
+
+Analyze Delta Beta:
+
+```{r}
+dex <- changepoint_locations(test_componentwise_proposal$dbeta_lst, 5000) 
+# replace NA with 0.
+dex[is.na(dex)] <- 0
+
+dex <- dex %>% 
+  rename("change1" = 1, "change2" = 2)
+
+dex %>% 
+  count(change1, change2) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n))
+```
+```{r}
+dex %>% 
+  count(change1, change2) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(10) %>% 
+  unite("change_points", change1:change2, remove=FALSE) %>% 
+  ggplot(data = ., aes(x = change_points, y = freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Change Point Configurations", y = "Proportion", x = "Configuration")
+```
+
+Analyze Pi:
+```{r}
+pi_out <- create_mcmc_list(test_componentwise_proposal$pi_lst) # row x col = delta_length x iteration
+length(pi_out[[1]])
+```
+
+```{r}
+ptidy1 <- param_tidy(pi_out, 53) # near a change point location
+ptidy2 <- param_tidy(pi_out, 79) # no change points
+```
+
+```{r}
+draw_histogram(ptidy1, "pi")
+draw_tp(ptidy1, 'pi', 2)
+
+draw_histogram(ptidy2, "pi")
+draw_tp(ptidy2, 'pi', 2)
+```
+Along the time instants where there is a change point in the simulated data (time instant 53), we see the posterior for pi is bimodal. On iterations where the DELTAS indicate a 1 at that position, the posterior mean of pi shifts to 0.6. On iterations where the deltas indicate a 0 at that position, the posterior mean of pi shifts to 0.4.
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
