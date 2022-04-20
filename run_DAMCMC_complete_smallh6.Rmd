@@ -1,0 +1,112 @@
+---
+title: "run_DAMCMC_complete_smallh6"
+author: "Jenny Yijian Huang"
+date: "4/2/2022"
+output: html_document
+---
+
+# Trying out different hyperparameters for the beta prior.
+```{r}
+x = seq(0,1,0.05)
+plot(x, y = dbeta(x, 1,10))
+# rbeta(1,0,1)
+```
+
+
+```{r}
+test_smallh6 <- run_DAMCMC_complete_smallh6(
+  theta0, cp_Y, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 2500,
+  par_prior = list(
+    a_beta = 1, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1,
+    a_pi11 = 10, b_pi11 = 10,
+    a_pi01 = 10, b_pi01 = 10
+  ), 
+  # h_hat = c(0.5,0.5,0.5,0.5,0.5), # P(dbeta_i = 1)
+  length_delta = 5,
+  x_b_ratio = 2,
+  gamma=1
+  )
+```
+
+```{r}
+test_smallh6$theta_rate_accept # 30%
+test_smallh6$run_time # 143.035 seconds
+```
+
+```{r}
+print(analyze_dbeta(test_smallh6$dbeta_lst))
+
+barplot(analyze_dbeta(test_smallh6$dbeta_lst)[[2]], main="Change Point Locations", xlab="Change Point Location",  
+ ylab="Proportion of MCMC Samples", names.arg=c("Delta One","Delta Two","Delta Three","Delta Four","Delta Five"), 
+ border="blue")
+abline(h=1/2, col="blue", lty="dashed", lwd=4)
+```
+
+```{r}
+# Create dataframe for Pi
+Pi_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(burnin:20000)), Pi01 = list(test_smallh6$pi01_lst[burnin:20000]), Pi11 = list(test_smallh6$pi11_lst[burnin:20000]) ))
+Pi_tidy
+```
+
+```{r}
+draw_tp(Pi_tidy, 'Pi01')
+draw_histogram(Pi_tidy, 'Pi01')
+draw_acf(Pi_tidy, 'Pi01', 200)
+
+draw_tp(Pi_tidy, 'Pi11')
+draw_histogram(Pi_tidy, 'Pi11')
+draw_acf(Pi_tidy, 'Pi11', 200)
+```
+
+# Traceplots, Posterior densities, ACF plots, and Credible Intervals for each Beta_t.
+```{r}
+sim_beta_list <- create_mcmc_list(test_smallh6$beta_lst[burnin:20000])
+length(sim_beta_list)
+```
+
+```{r}
+# combine all beta lists into a dataframe.
+beta_sim_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(1:19001)), Beta1 = sim_beta_list[1], Beta2 = sim_beta_list[2], Beta3 = sim_beta_list[3], Beta4 = sim_beta_list[4], Beta5 = sim_beta_list[5], Beta6 = sim_beta_list[6]))
+beta_sim_tidy <- beta_sim_tidy %>% 
+  remove_burnin(1000)
+```
+
+```{r}
+# Posterior means
+means <- beta_sim_tidy %>%
+  dplyr::select(- .data$Iteration) %>%
+  {tibble::tibble(
+    var  = colnames(.),
+    mean = colMeans(.),
+  )}
+
+# ESS
+ESS = coda::effectiveSize(coda::mcmc(beta_sim_tidy))
+ESS # ESS is higher when we correctly specify the model (eg allow for change points.)
+
+# Mean of all beta ESS
+mean(ESS[2:7])
+
+# ESS per clock time (MCMC Efficiency, show this alongside ACF plots). number of time points = 6.
+mean(ESS[2:7])/(test_smallh6$run_time)
+```
+
+
+```{r}
+# plot results in a format similar to PDSIR code.
+vars <- c("Beta1", "Beta2","Beta3","Beta4","Beta5","Beta6")
+
+for(var in vars)
+  print(draw_tp(beta_sim_tidy, var)) # burn in.
+for(var in vars)
+  print(draw_histogram(beta_sim_tidy, var))
+for(var in vars)
+  print(draw_acf(beta_sim_tidy, var, 200))
+```
+
