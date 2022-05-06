@@ -1,0 +1,114 @@
+---
+title: "Adjusting Beta(t) Estimate"
+author: "Jenny Yijian Huang"
+date: "4/30/2022"
+output: html_document
+---
+
+
+```{r}
+change_point_data_fine <- sim_changepoint_sem(
+  S0 = 1e3, I0 = 1e1, t_end = 6,
+  theta = list(R0 = c(2.5, 1.5, 3.5), gamma = 1, lambda = 1, shape = 1),
+  change_day = c(2,4),
+  iota_dist = "exponential",
+  gener = FALSE, b = 1/2,
+  E0 = 0, type = "SIR" # "SEIR"
+)
+
+cp_data <- change_point_data_fine$x
+  
+change_point_data_fine$x$tau_T <- cp_data$tau_T * (81/6)
+change_point_data_fine$x$tau_J <- cp_data$tau_J * (81/6)
+change_point_data_fine$t <- change_point_data_fine$t * (81/6)
+change_point_data_fine$t_end <- 81
+
+change_point_data_fine$MLE
+```
+
+# Below, we visualize the I(t) compartment over time.
+```{r}
+plot(x = change_point_data_fine$t[1:1500], y = change_point_data_fine$I[1:1500], main="Epidemic Trajectory",
+   xlab="Time", ylab="I(t)")
+```
+# We will use only the partially observed (incidence) data as input to our DA-MCMC.
+
+```{r}
+cp_thin_Y <- observed_data(change_point_data_fine, K=81)
+# Change input to accommodate h_hat = 80
+cp_thin_Y$ts <- cp_thin_Y$ts # 6 --> 80 to allow for B(t) to line up in d_prop_x
+cp_thin_Y$t_end <- 81
+cp_thin_Y
+```
+
+```{r}
+plot(x = cp_thin_Y$ts, y = c(0, cp_thin_Y$T_k), main="Observed Counts", xlab="Time", ylab="New Infections")
+```
+```{r}
+theta0 = list(R0 = 1, beta=0.001, lambda = 1, shape = 1, gamma = 1/(79/6))
+```
+
+```{r}
+sim_MM_long <- run_DAMCMC_complete_smallh6(
+  theta0, cp_thin_Y, N = 20000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 2500,
+  par_prior = list(
+    a_beta = 1, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1,
+    a_pi11 = 0, b_pi11 = 1,
+    a_pi01 = 100, b_pi01 = 100
+  ), 
+  length_delta = 80,
+  x_b_ratio = 2,
+  gamma=1/(79/6)
+  )
+```
+# Mean Beta
+
+```{r}
+burnin = 500
+sim_old_df <- create_df_dbeta(sim_MM_long$dbeta_lst, sim_MM_long$beta_lst, burnin, "X79")
+sim_old_df
+```
+
+```{r}
+sim_t1 <- sim_old_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(1)
+sim_t1
+```
+
+The top configuration accounts for 0.63 of the posterior MCMC samples of delta.
+
+```{r}
+beta_over_time_old <- sim_old_df %>% 
+  filter(delta_beta %in% sim_t1$delta_beta) %>% 
+  mutate(X82 = X81) %>%  # add the stopping week
+  select(ID, X1.y:X82)
+colnames(beta_over_time_old) <- c("ID", 1:82)
+```
+# Create a Spagetti Plot
+```{r}
+Rt_plot6 <- beta_over_time_old  %>% 
+  pivot_longer(cols = -ID,
+                 names_to = "time_unit", names_prefix = "V",
+                 names_transform = list(Time = as.integer),
+                 values_to = "Beta") %>%
+    filter(ID %% 200 == 0) %>% 
+  mutate(time_unit = as.numeric(time_unit))
+```
+
+```{r}
+Rt_plot6 %>% 
+    ggplot(aes(x = time_unit, y = Beta*(81/6), group = ID)) +
+    geom_step(alpha = 0.1, color = "red") +
+    labs(title = "Beta Over Time", subtitle = "True Changes at times 27, 54", y = "Beta", x = "Time Unit") +
+  expand_limits(y = 0)
+```
+
