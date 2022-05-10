@@ -1,0 +1,242 @@
+---
+title: 'ebola data'
+author: "Jenny Yijian Huang"
+date: "2/11/2022"
+output: html_document
+---
+
+# Ebola incidence data.
+Simulating data from the parameter results.
+
+# Reading in data
+```{r}
+path_data = "Ebola/Guinea_modified.csv"
+```
+
+```{r}
+# Ebola Data
+d <- readr::read_csv(
+  path_data,
+  col_types = readr::cols(
+    .default            = readr::col_double(),
+    Location            = readr::col_character(),
+    `Ebola data source` = readr::col_character(),
+    `Indicator type`    = readr::col_character(),
+    `Case definition`   = readr::col_character()
+  )
+) %>%
+  dplyr::select(-(2:4)) %>%
+  dplyr::group_by(.data$Location) %>%
+  dplyr::summarize_all(sum) %>%
+  tibble::column_to_rownames("Location") %>%
+  as.matrix
+
+nam <- dimnames(d)
+dimnames(d) <- NULL
+#d[, 1 : 10]
+T_k_ebola <- d[which(nam[[1]] == "GUECKEDOU"), ] # Ebola started in the GUECKEDOU prefecture
+
+# # Observed data (incidence)
+print(T_k_ebola)
+print(nam[[1]][14])
+print(nam[[2]][c(1:3, 71:73)])
+barplot(T_k_ebola, xlab = "Week")
+
+K     <- length(T_k_ebola) # number of time periods
+t_end <- 7 * K
+ts    <- seq(0, t_end, by = 7) # observation schedule
+```
+```{r}
+# Observed data
+S0 <- 291823 # https://en.wikipedia.org/wiki/Prefectures_of_Guinea
+I0 <- 5
+Y_ebola <- list(T_k = T_k_ebola, F_k = NULL, I0 = I0, S0 = S0, ts = ts, t_end = t_end)
+```
+
+```{r}
+d[which(nam[[1]] == "GUECKEDOU"), ]
+d[which(nam[[1]] == "GUECKEDOU"), ][68]
+```
+
+```{r}
+plot(x = Y_ebola$ts, y = c(0, Y_ebola$T_k), main="Ebola Incidence Observed", sub="each point one week", xlab="Time (days)", ylab="New Infections")
+```
+
+```{r}
+length(Y_ebola$T_k) # 73 observations (weeks)
+length(Y_ebola$ts) # 74 (time points)
+```
+
+```{r}
+length(Y_ebola$T_k) # 73
+length(seq(0,18.25, 0.25)) # Write the timescale in terms of months (instead of days). 74
+
+Y_ebola$ts <- seq(0,18.25, 0.25)
+Y_ebola$t_end <- 18.25
+```
+
+```{r}
+Y_ebola # 73 observations, 18 months.
+```
+
+```{r}
+# The first 4 observations contain 0's and the last 21 observations are 0's. We cannot learn beta in a segment without any infection or recovery events. Hence, we only have enough data to learn beta reasonably for months 2 through 12.
+length(Y_ebola$T_k[5:52]) # 48
+length(seq(0,12, 0.25)) # Write the timescale in terms of months (instead of days). 49.
+# run once alone.
+Y_ebola$T_k <- Y_ebola$T_k[5:52]
+Y_ebola$ts <- seq(0,12, 0.25)
+Y_ebola$t_end <- 12
+
+Y_ebola
+```
+
+```{r}
+length(Y_ebola$T_k)
+
+length(Y_ebola$ts)
+```
+
+
+```{r}
+plot(x = Y_ebola$ts, y = c(0, Y_ebola$T_k), main="Ebola Incidence Observed", sub="each point one week", xlab="Time (days)", ylab="New Infections")
+```
+We simply don't have enough infection events at the beginning of the epidemic to learn beta in that first segment. [2  0  0  5  3  5  2  3]
+```{r}
+ebola_ <- run_DAMCMC_complete_smallh6(
+  ebola_theta0, Y_ebola, N = 12000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 2500,
+  par_prior = list(
+    a_beta = 0.01, b_beta = 0.01,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1,
+    a_pi11 = 1, b_pi11 = 100,
+    a_pi01 = 500, b_pi01 = 500
+  ), 
+  length_delta = 12,
+  x_b_ratio = 2,
+  gamma=0.8
+  )
+```
+
+```{r}
+eb_old7 <- run_DAMCMC_complete_old(
+  ebola_theta0, Y_ebola, N = 12000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 2500,
+  par_prior = list(
+    a_beta = 0.1, b_beta = 0.1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1
+  ),
+  h_hat = rep(0.5, 12),
+  x_b_ratio = 2,
+  gamma=0.8
+)
+```
+```{r}
+print(analyze_dbeta(eb_old7$dbeta_lst))
+
+barplot(analyze_dbeta(eb_old7$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count",names.arg = seq(1,12),
+ border="blue")
+# abline(h=1/2, col="blue", lty="dashed", lwd=4)
+```
+
+```{r}
+print(analyze_dbeta(ebola_5$dbeta_lst))
+
+barplot(analyze_dbeta(ebola_5$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
+ ylab="Count",names.arg = seq(1,12),
+ border="blue")
+# abline(h=1/2, col="blue", lty="dashed", lwd=4)
+```
+
+
+# Change Point D-A MCMC
+
+# Set up condensed version of ebola data.
+```{r}
+T_k_ebola_short <- c()
+for(j in seq(from=1, to=length(T_k_ebola), by=4)){
+  # print(j)
+  right <- j+3
+  print(right)
+  T_k_ebola_short <- append(T_k_ebola_short, sum(T_k_ebola[j:right]))
+  # print(T_k_ebola_short)
+}
+
+T_k_ebola_short
+
+Y_ebola_cp$T_k <- T_k_ebola_short
+
+Y_ebola_cp$T_k <- T_k_ebola_short[1:13]
+```
+
+```{r}
+Y_ebola_cp <- list(T_k = T_k_ebola_short[1:13], F_k = NULL, I0 = 5, S0 = 291823, ts = seq(0, 13, by = 1), t_end = 13)
+```
+
+```{r}
+plot(x = Y_ebola_cp$ts, y = c(0, Y_ebola_cp$T_k), main="Ebola Incidence Observed", sub="each point one month", xlab="Time", ylab="New Infection Counts")
+```
+
+# Group ebola data into months.
+```{r}
+T_k_ebola_short <- c()
+for(j in seq(from=1, to=length(Y_ebola$T_k), by=4)){
+  # print(j)
+  right <- j+3
+  print(right)
+  # print(cut)
+  T_k_ebola_short <- append(T_k_ebola_short, sum(Y_ebola$T_k[j:right]))
+  # print(T_k_ebola_short)
+}
+T_k_ebola_short
+```
+
+# Bin the corresponding time indices into months.
+```{r}
+Ts_ebola_short <- c()
+for(j in seq(from=1, to=length(Y_ebola$ts[2:74]), by=4)){
+  # print(j)
+  right <- j+3
+  print(right)
+  # print(cut)
+  Ts_ebola_short <- append(Ts_ebola_short, Y_ebola$ts[2:74][right])
+  # print(T_k_ebola_short)
+}
+
+print(Y_ebola$ts)
+Ts_ebola_short <- Ts_ebola_short/(7*4) # timescale in months
+```
+
+# Set up coarse-grained Y.
+```{r}
+Y_ebola_month <- Y_ebola
+Y_ebola_month$T_k <- T_k_ebola_short[1:18]
+Y_ebola_month$ts <- Ts_ebola_short[1:18] # 73/28 = 18.75 months, we will examine data from the 18 full months.
+Y_ebola_month$t_end <- 18
+Y_ebola_month
+```
+
+```{r}
+plot(x = Y_ebola_month$ts, y = Y_ebola_month$T_k, main="Ebola Incidence Observed", sub="each point is one month", xlab="Time (months)", ylab="New Infections")
+```
+A priori, we want to restrict change points from occurring the last 5 weeks (as the data shows all zeros, making it impossible to learn beta in segments in these intervals. To do so, we can bin the last 6 points into 1 point.
+```{r}
+Y_ebola_month$T_k <- c(T_k_ebola_short[1:12], rep(3, 6))
+Y_ebola_month
+```
+
+
+
+
+
+
+
