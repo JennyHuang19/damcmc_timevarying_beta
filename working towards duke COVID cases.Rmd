@@ -5,31 +5,18 @@ date: "12/22/2021"
 output: html_document
 ---
 
-How can we tell if the curve flattens because of a change in transmission rate (i.e. lockdowns, mask mandates) or because of the natural trajectory of the I(t) curve (i.e. depletion of the S(t) compartment)?
-
 A: The stochastic SIR takes into account the s compartment, so when susceptible individuals have not been sufficiently depleted, the model can attribute the drop in I(t) to a change in transmission rate (due to policy mandates etc.).
 
 Hence, a change point detection model is useful because based on visualizations of the trajectory alone, it is incredibly difficult to pin-point when the transmission rate changed. The time-varying SIR model can help us to locate and quantify these change-points.
 
 https://coronavirus.duke.edu/covid-testing/spring-2021-duke-covid-testing-tracker/ Duke COVID-19 Incidence Data Spr. 2021.
 
-```{r}
-duke_Y$ts <- seq(0, 6, by = 0.4)
-duke_Y <- list("T_k" = c(49, 62, 54, 40, 13, 11, 22, 53, 218, 61, 25, 15, 29, 21, 0), "I0" = 34, "S0" = 25000, "ts" = duke_Y$ts, 
-"t_end" = 6)
-length(duke_Y$T_k)
-length(duke_Y$ts)
-```
-
 Q. How effective was the stay-in-place order Duke implemented March 13th, 2021? Right at the end of week 9 (March 8-14th). By how much did beta decrease?
 
-A ~seven fold decrease in beta from month .
-
-# Finer granularity in specifying change points.
 
 ```{r}
 # ts
-duke_Y2 <- list("T_k" = c(49, 62, 54, 40, 13, 11, 22, 53, 218, 61, 25, 15, 29, 21, 0), "I0" = 34, "S0" = 25000, "ts" = seq(0, t_end2, by = 1), 
+duke_Y2 <- list("T_k" = c(49, 62, 54, 40, 13, 11, 22, 53, 218, 61, 25, 15, 29, 21, 0), "I0" = 34, "S0" = 25000, "ts" = seq(0, 15, by = 1), 
 "t_end" = 15) # remove the first and last points.
 ```
 
@@ -37,29 +24,6 @@ duke_Y2 <- list("T_k" = c(49, 62, 54, 40, 13, 11, 22, 53, 218, 61, 25, 15, 29, 2
 ```{r}
 plot(x = duke_Y2$ts, y = c(0, duke_Y2$T_k), main="Duke COVID-19 Spr. 2021", sub="Jan. 11-17th to Apr. 19-25th", xlab="Time (each point represents a week)", ylab="New Infection Counts")
 ```
-
-
-```{r}
-dk_observations2 <- run_DAMCMC_complete_2(
-  theta0, duke_Y2, N = 10000,
-  rho = 0.2, param = "bg", approx = "ldp",
-  iota_dist = "exponential", gener = FALSE, b = 1/2,
-  thin = 1, plt = 5000,
-  par_prior = list(
-    a_beta = 0.01, b_beta = 0.01,
-    a_gamma = 1, b_gamma = 1,
-    a_R0 = 2, b_R0 = 2,
-    a_lambda = 1, b_lambda = 1
-  ), h_hat = c(0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.01,0.1,0.90,0.1,0.01,0.00,0.00), # P(dbeta_i = 1)
-  x_b_ratio = 2,
-  gamma=1
-) 
-```
-When we allow for finer divisions in change point, the latent epidemic I(t) compartment actually reflects the true trajectory more accurately.
-```{r}
-theta0
-```
-
 
 ```{r}
 dk_observations6 <- run_DAMCMC_complete_old(
@@ -78,20 +42,29 @@ dk_observations6 <- run_DAMCMC_complete_old(
 ) 
 ```
 
+```{r}
+length(c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5))
+```
+
+
 
 ```{r}
 analyze_dbeta(dk_observations6$dbeta_lst)
 
 barplot(analyze_dbeta(dk_observations6$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
- ylab="Count", 
+ ylab="frequencyy", 
  border="blue")
 abline(h=0.5, col="blue", lty="dashed", lwd=4)
+```
+
+```{r}
+dk_observations6$theta_rate_accept # 49%
 ```
 
 Plot results
 ```{r}
 plot(x = duke_Y2$ts[-1]-0.5, y = duke_Y2$T_k, main="Duke COVID-19 Spr. 2021", sub="Jan. 11-17th to Apr. 19-25th", xlab="Time (each point represents a week)", ylab="New Infection Counts") # the points are plotted in the middle of week (i.e. week 1 results located at 0.5)
-abline(v=c(7,9),lwd=2,col="red")
+abline(v=c(6,9),lwd=2,col="red")
 ```
 
 # Create Dataframe from raw dbeta and beta lists for frequency plot of configurations.
@@ -141,7 +114,7 @@ covid_t5
 
 ```{r}
 # Colors
-cols <- c("red", "orange", "grey", "grey", "yellow") # INDEXING ISSUE.
+cols <- c("red", "orange", "grey", "yellow", "grey") # INDEXING ISSUE.
 
 # Basic line plot with points
 ggplot(data=covid_M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_beta)) +
@@ -149,7 +122,7 @@ ggplot(data=covid_M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_be
   # geom_line()+
   geom_point() +
   scale_color_manual(values = cols) +
-  labs(title = "Transmission Rate of COVID-19", subtitle="Top 5 Configurations", y = "mean transmission rate", x = "Week", color='Change Point Configuration') + 
+  labs(title = "Transmission Rate of COVID-19", subtitle="Top 5 Configurations", y = "transmission rate (mean)", x = "Week", color='Change Point Configuration') + 
   scale_x_discrete(labels=seq(0,15,1))
 ```
 
@@ -161,7 +134,8 @@ covid_top_deltabetas <- covid_df %>%
 covid_mean_betas <- covid_top_deltabetas %>%
   select(delta_beta, X1.y:X15) %>%
   group_by(delta_beta) %>% 
-  summarise(across(everything(), mean))
+  summarise(across(everything(), mean)) %>% 
+  mutate(X16 = X15) # add the stopping week
 
 # flip from cartesian to index. https://tidyr.tidyverse.org/reference/pivot_longer.html
 covid_M <- covid_mean_betas %>% 
@@ -171,79 +145,101 @@ covid_M <- covid_mean_betas %>%
 covid_M$time_unit <- factor(covid_M$time_unit, levels=unique(covid_M$time_unit))
 ```
 
-
-
-# new way of dprop_x
-
 ```{r}
-dk_observations9 <- run_DAMCMC_complete_old(
-  theta0, duke_Y2, N = 20000,
-  rho = 0.2, param = "bg", approx = "ldp",
-  iota_dist = "exponential", gener = FALSE, b = 1/2,
-  thin = 1, plt = 5000,
-  par_prior = list(
-    a_beta = 1, b_beta = 1, # are cp locations sensitive to abeta prior?
-    a_gamma = 1, b_gamma = 1,
-    a_R0 = 2, b_R0 = 2,
-    a_lambda = 1, b_lambda = 1
-  ), h_hat = c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5), # P(dbeta_i = 1)
-  x_b_ratio = 2,
-  gamma=1
-) 
+covidbeta_over_time6 <- covid_top_deltabetas %>% 
+  mutate(X16 = X15) %>%  # add the stopping week
+  select(ID, X1.y:X16)
 ```
 
-```{r}
-analyze_dbeta(dk_observations2$dbeta_lst)
+```{r fig.width=2.5, fig.height=2.5}
+covidbeta_over_time6 <- covidbeta_over_time6  %>% 
+  pivot_longer(cols = -ID,
+                 names_to = "time_unit", names_prefix = "V",
+                 # names_transform = list(Time = as.integer),
+                 values_to = "Beta") %>%
+    filter(ID %% 100 == 0)
 
-barplot(analyze_dbeta(dk_observations2$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
- ylab="Count", 
- border="blue")
-abline(h=0.9, col="blue", lty="dashed", lwd=4)
-```
+#preserve the order of time units.
+covidbeta_over_time6$time_unit <- factor(covidbeta_over_time6$time_unit, levels=unique(covidbeta_over_time6$time_unit))
 
-
-# A flat prior allowing frequent changes in beta
-
-Why is it that when we allow changes for finer intervals that the I(t) compartment becomes more accurate throughout
-```{r}
-dk_observations3 <- run_DAMCMC_complete_2(
-  theta0, duke_Y2, N = 20000,
-  rho = 0.2, param = "bg", approx = "ldp",
-  iota_dist = "exponential", gener = FALSE, b = 1/2,
-  thin = 1, plt = 5000,
-  par_prior = list(
-    a_beta = 0.01, b_beta = 0.01,
-    a_gamma = 1, b_gamma = 1,
-    a_R0 = 2, b_R0 = 2,
-    a_lambda = 1, b_lambda = 1
-  ), h_hat = c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.0), # P(dbeta_i = 1)
-  x_b_ratio = 2,
-  gamma=1/3 # 3 days to quarantine.
-) 
+covidbeta_over_time6 %>% 
+    ggplot(aes(x = time_unit, y = Beta, group = ID)) +
+    geom_step(alpha = 0.1, color = "red") +
+    labs(title = "Transmission Rate", y = "Beta", x = "Week", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(0,16,1)) + # add week 6 in.
+  expand_limits(y = 0)
 ```
 
 
 ```{r}
-analyze_dbeta(dk_observations3$dbeta_lst)
-
-barplot(analyze_dbeta(dk_observations3$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
- ylab="Count", 
- border="blue")
-abline(h=0.5, col="blue", lty="dashed", lwd=4)
+covidbeta_over_time6 %>% 
+    ggplot(aes(x = time_unit, y = Beta*25000, group = ID)) +
+    geom_step(alpha = 0.1, color = "red") +
+    labs(title = "SARS-COV-2 Transmission Rate Falls Following Duke's Stay-in-place Order", subtitle = "Stay-in-place order implemented at the EOW 9", y = "Rt", x = "Week", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(0,16,1)) + # add week 6 in.
+  expand_limits(y = 0)
 ```
-Beginning to week: 7, 9
 
-Plot results
+# Create dataframe
 ```{r}
-plot(x = duke_Y2$ts, y = c(0, duke_Y2$T_k), main="Duke COVID-19 Spr. 2021", sub="Jan. 11-17th to Apr. 19-25th", xlab="Time (each point represents a week)", ylab="New Infection Counts")
-abline(v=c(7,9),lwd=2,col="red")
+dk_beta_list <- create_mcmc_list(dk_observations6$beta_lst[burnin:20000])
+length(dk_beta_list)
 ```
 
 ```{r}
-burnin <- 501
-mcmc.trace.covid.fine <- create_tp_data(dk_observations3$beta_lst[burnin:20000])
-summary(mcmc.trace.covid.fine)
+# combine all beta lists into a dataframe.
+beta_dk_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(1:19001)), Beta6 = dk_beta_list[6], Beta7 = dk_beta_list[7], Beta8 = dk_beta_list[8], Beta9 = dk_beta_list[9], Beta10 = dk_beta_list[10]))
+beta_dk_tidy <- beta_dk_tidy %>% 
+  remove_burnin(1000)
+beta_dk_tidy
 ```
 
-Week 7 to 8 saw a 3.038752 fold increase in Beta;
-Week 9 to 10 saw a 5.223502 fold decrease in Beta.
+
+```{r}
+# Posterior means
+means <- beta_dk_tidy %>%
+  dplyr::select(- .data$Iteration) %>%
+  {tibble::tibble(
+    var  = colnames(.),
+    mean = colMeans(.),
+  )}
+
+ESS = coda::effectiveSize(coda::mcmc(beta_dk_tidy))
+ESS
+```
+ESS: [80, 200]
+
+```{r}
+# chains mixing very well for uniform proposal.
+vars <- c("Beta6", "Beta7","Beta8","Beta9")
+
+for(var in vars)
+  print(draw_tp(beta_dk_tidy, var)) # burn in.
+for(var in vars)
+  print(draw_histogram(beta_dk_tidy, var))
+for(var in vars)
+  print(draw_acf(beta_dk_tidy, var, 200))
+```
+
+
+```{r}
+upper95 <- beta_dk_tidy %>%
+  summarise_at(2:6, ~ quantile(., probs = c(0.975))) %>%
+  gather("var", "q97.5")
+
+lower95 <- beta_dk_tidy %>%
+  summarise_at(2:6, ~ quantile(., probs = c(0.025))) %>%
+  gather("var", "q2.5")
+
+CI <- inner_join(lower95, upper95, by = "var")
+posterior_df <- inner_join(means, CI, by = "var")
+posterior_df
+```
+
+Week 6 to 7 saw a 2 fold increase in Beta;
+Week 9 to 10 saw a 4.5 fold decrease in Beta.
+
+r0 = Beta * S0 / gamma = Beta * 25000 / gamma
+R0_6 = 1.001597
+R0_9 = 2.216309
+R0_10 = 0.4972857
