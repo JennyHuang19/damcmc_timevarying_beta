@@ -1,0 +1,139 @@
+---
+title: "simulation_2cp_continued"
+author: "Jenny Yijian Huang"
+date: '2022-05-13'
+output: html_document
+---
+
+```{r}
+theta0 = list(R0 = 1, beta=0.001, lambda = 1, shape = 1, gamma = 1/(79/6))
+```
+
+
+```{r}
+# acceptance rate
+sim_MM_long6$theta_rate_accept
+sim_MM_long6$x_rate_accept
+```
+
+```{r}
+print(analyze_dbeta(sim_MM_long6$dbeta_lst))
+print(barplot(analyze_dbeta(sim_MM_long6$dbeta_lst)[[2]], names.arg = seq(1:79), main="Change Point Locations", xlab="Change Point Location",  
+ ylab="Proportion of MCMC Samples", 
+ border="blue"))
+```
+Analyze Delta Beta:
+
+```{r}
+dex <- changepoint_locations(sim_MM_long6$dbeta_lst, 5000) 
+# replace NA with 0.
+dex[is.na(dex)] <- 0
+dex <- dex %>% 
+  rename("change1" = 1, "change2" = 2)
+dex %>% 
+  count(change1, change2) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n))
+```
+```{r fig.width=2, fig.height=2}
+dex %>% 
+  count(change1, change2) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(3) %>% 
+  unite("change_points", change1:change2, sep = ", ", remove=FALSE) %>% 
+  ggplot(data = ., aes(x = change_points, y = freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top Change Point Configurations", y = "Proportion of MCMC Samples", x = "Change Point Time Instants") +
+  theme_bw()
+```
+# Create Dataframe from raw dbeta and beta lists for frequency plot of configurations.
+```{r}
+create_df_dbeta <- function(mcmc_output_dbeta, mcmc_output_beta, burnin, strlastX) {
+  # strlastX: string value of the last dbeta (change point) index.
+  temp_df <- mcmc_output_dbeta[burnin:length(mcmc_output_dbeta)]
+  temp_df <- data.frame(t(sapply(temp_df,c)))
+  dbeta_lst_df <- temp_df %>% 
+    mutate(ID = burnin:length(mcmc_output_dbeta)) %>% 
+    unite("delta_beta", X1:strlastX, remove=FALSE)
+  beta_lst_raw <- mcmc_output_beta[burnin:length(mcmc_output_beta)]
+  beta_lst_df <- data.frame(t(sapply(beta_lst_raw,c)))
+  beta_lst_df <- beta_lst_df %>% 
+    mutate(ID = burnin:length(mcmc_output_beta))
+  
+  complete_tibble <- merge(dbeta_lst_df, beta_lst_df, by="ID")
+  return(complete_tibble)
+}
+sim_df <- create_df_dbeta(sim_MM_long6$dbeta_lst, sim_MM_long6$beta_lst, burnin=5000, "X79")
+```
+
+```{r}
+sim_top <- sim_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(3)
+
+sim_top_deltabetas <- sim_df %>% 
+  filter(delta_beta %in% sim_top$delta_beta)
+
+```
+
+```{r}
+simbeta_over_time6 <- sim_top_deltabetas %>% 
+  mutate(X81 = X80) %>%  # add the stopping week
+  select(ID, X1.y:X80)
+```
+
+# Spagetti Plots
+```{r}
+simbeta_over_time6 <- simbeta_over_time6  %>% 
+  pivot_longer(cols = -ID,
+                 names_to = "time_unit", names_prefix = "V",
+                 # names_transform = list(Time = as.integer),
+                 values_to = "Beta") %>%
+    filter(ID %% 500 == 0)
+
+#preserve the order of time units.
+simbeta_over_time6$time_unit <- factor(simbeta_over_time6$time_unit, levels=unique(simbeta_over_time6$time_unit))
+```
+
+```{r fig.width=3}
+# spagetti plot of beta over time
+
+simbeta_over_time6 %>% 
+    ggplot(aes(x = time_unit, y = Beta*(79/6), group = ID)) +
+    geom_step(alpha = 0.1, color = "red") +
+    labs(title = "Transmission Rate", y = "Beta(t)", x = "Time Instant") + 
+  theme(
+  plot.background = element_rect(fill = "white"),
+  panel.background = element_rect(fill = "white"),
+  axis.line.x = element_line(color = "gray"), axis.line.y = element_line(color = "gray"),
+  #axis.ticks.x = element_blank(),
+        #axis.text.x = element_blank()
+  )+
+  scale_x_discrete(breaks=c("X1.y", "X15.y", "X30.y", "X45.y", "X60.y", "X75.y"),
+        labels=c("1", "15", "30", "45", "60", "75"))
+  expand_limits(y = 0)
+```
+
+
+```{r}
+sim_MM_long6 <- run_DAMCMC_complete_smallh6(
+  theta0, cp_thin_Y, N = 100000,
+  rho = 0.2, param = "bg", approx = "ldp",
+  iota_dist = "exponential", gener = FALSE, b = 1/2,
+  thin = 1, plt = 10000,
+  par_prior = list(
+    a_beta = 1, b_beta = 1,
+    a_gamma = 1, b_gamma = 1,
+    a_R0 = 2, b_R0 = 2,
+    a_lambda = 1, b_lambda = 1,
+    a_pi11 = 1, b_pi11 = 10,
+    a_pi01 = 100, b_pi01 = 100
+  ), 
+  length_delta = 79,
+  x_b_ratio = 2,
+  gamma=1/(79/6)
+  )
+```   
