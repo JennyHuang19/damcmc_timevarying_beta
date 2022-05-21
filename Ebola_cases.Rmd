@@ -8,7 +8,9 @@ output: html_document
 
 # Reading in data
 ```{r}
-path_data= "Ebola/Guinea_modified.csv"
+devtools::install_github("rmorsomme/PDSIR")
+library(PDSIR)
+path_data= "Current Code/Ebola/Guinea_modified.csv"
 ```
 
 ```{r}
@@ -160,9 +162,9 @@ dex <- dex %>%
 
 ```{r fig.width=2, fig.height=2}
 dex %>% 
-  count("change_points") %>% 
-  mutate(propr = freq/sum(freq)) %>% 
-  arrange(desc(freq)) %>% 
+  count(change_points) %>% 
+  mutate(propr = n/sum(n)) %>% 
+  arrange(desc(propr)) %>% 
   head(5) %>% 
   ggplot(data = ., aes(x = change_points, y = propr)) +
   geom_bar(stat = "identity") +
@@ -171,3 +173,123 @@ dex %>%
 ```
 
 
+# Create Dataframe from raw dbeta and beta lists for frequency plot of configurations.
+```{r}
+create_df_dbeta <- function(mcmc_output_dbeta, mcmc_output_beta, burnin, strlastX) {
+  # strlastX: string value of the last dbeta (change point) index.
+  temp_df <- mcmc_output_dbeta[burnin:length(mcmc_output_dbeta)]
+  temp_df <- data.frame(t(sapply(temp_df,c)))
+  dbeta_lst_df <- temp_df %>% 
+    mutate(ID = burnin:length(mcmc_output_dbeta)) %>% 
+    unite("delta_beta", X1:strlastX, remove=FALSE)
+  beta_lst_raw <- mcmc_output_beta[burnin:length(mcmc_output_beta)]
+  beta_lst_df <- data.frame(t(sapply(beta_lst_raw,c)))
+  beta_lst_df <- beta_lst_df %>% 
+    mutate(ID = burnin:length(mcmc_output_beta))
+  
+  complete_tibble <- merge(dbeta_lst_df, beta_lst_df, by="ID")
+  return(complete_tibble)
+}
+eb_df <- create_df_dbeta(ebola_6$dbeta_lst, ebola_6$beta_lst, burnin=5000, "X11")
+```
+
+# Frequencies of the most common configurations
+```{r}
+eb_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(5) %>% 
+  ggplot(data = ., aes(x = delta_beta, y = freq)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Change Point Configurations", y = "Frequency", x = "Configuration")+ 
+  theme(text = element_text(size=10), axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+eb_top <- eb_df %>% 
+  count(delta_beta) %>% 
+  mutate(freq = n / sum(n)) %>% 
+  arrange(desc(n)) %>% 
+  head(3)
+```
+
+# Compute the mean betas of the top configurations.
+```{r}
+ebola_top_deltabetas <- eb_df %>% 
+  filter(delta_beta %in% eb_top$delta_beta)
+
+ebola_mean_betas <- ebola_top_deltabetas %>%
+  select(delta_beta, X1.y:X12) %>%
+  group_by(delta_beta) %>% 
+  summarise(across(everything(), mean))
+
+# flip from cartesian to index. https://tidyr.tidyverse.org/reference/pivot_longer.html
+eb_M <- ebola_mean_betas %>% 
+  pivot_longer(!delta_beta, names_to = "time_unit", values_to = "beta")
+
+
+#preserve the order of time units.
+eb_M$time_unit <- factor(eb_M$time_unit, levels=unique(eb_M$time_unit))
+```
+# Posterior Mean of B(t)
+```{r}
+# Colors
+cols <- c("red", "orange", "grey", "grey", "yellow") # INDEXING ISSUE.
+# Basic line plot with points
+ggplot(data=eb_M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_beta)) +
+  geom_step() +
+  # geom_line()+
+  geom_point() +
+  scale_color_manual(values = cols) +
+  labs(title = "Transmission Rate During Ebola Epidemic", y = "Transmission rate", x = "Month", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(1,12,1))
+```
+
+
+```{r}
+ebolabeta_over_time6 <- ebola_top_deltabetas %>% 
+  mutate(X13 = X12) %>%  # add the stopping week
+  select(ID, X1.y:X13)
+```
+# Spagetti Plots:
+
+```{r fig.width=2, fig.height=2}
+ebolabeta_over_time6 <- ebolabeta_over_time6  %>% 
+  pivot_longer(cols = -ID,
+                 names_to = "time_unit", names_prefix = "V",
+                 # names_transform = list(Time = as.integer),
+                 values_to = "Beta") %>%
+    filter(ID %% 100 == 0)
+
+#preserve the order of time units.
+ebolabeta_over_time6$time_unit <- factor(ebolabeta_over_time6$time_unit, levels=unique(ebolabeta_over_time6$time_unit))
+
+#mutate(r0)
+ebolabeta_over_time6 <- ebolabeta_over_time6 %>% 
+  mutate(R0 = Beta * 291823 / 0.8)
+  
+
+# spagetti plot of R0 over time
+ebolabeta_over_time6 %>% 
+    ggplot(aes(x = time_unit, y = Beta, group = ID)) +
+    geom_step(alpha = 0.1, color = "red") +
+    labs(title = "Transmission Rate of Ebola", y = "Beta(t)", x = "Month (Jan-Dec. 2014)", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(1,13,1)) +
+  expand_limits(y = 0) +
+  theme_bw()
+
+# spagetti plot of R0 over time
+ebolabeta_over_time6 %>% 
+    ggplot(aes(x = time_unit, y = R0, group = ID)) +
+    geom_step(alpha = 0.1, color = "red") +
+    labs(title = "Reproduction number of Ebola", y = "R0", x = "Month (Jan-Dec. 2014)", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(1,13,1)) +
+  expand_limits(y = 0) +
+  theme_bw()
+```
+
+r0 = Beta * S0 / gamma = Beta * 25000 / gamma
+R0_2 = 2.41
+R0_3 = 1.13
+R0_9 = 0.61
