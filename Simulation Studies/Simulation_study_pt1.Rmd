@@ -1,5 +1,5 @@
 ---
-title: "Prior sensitivity analysis"
+title: "Simulation_study pt 1"
 author: "Jenny Yijian Huang"
 date: "1/23/2022"
 output: html_document
@@ -9,22 +9,25 @@ Simulation Study:
 
 # First, we simulate an epidemic with change points in R0 at weeks 2,4 using Gillespie's algorithm.
 ```{r}
-change_point_data <- MLE_test(
-  S0 = 1e3, I0 = 1e1, t_end = 6,
+change_point_data <- sim_changepoint_sem(
+  S0 = 1e3, I0 = 1e1, t_end = 9,
   theta = list(R0 = c(2.5, 1.5, 3.5), gamma = 1, lambda = 1, shape = 1),
   change_day = c(2,4),
   iota_dist = "exponential",
   gener = FALSE, b = 1/2,
-  E0 = 0, type = "SIR" # "SEIR"
+  E0 = 0, type = "SIR" 
 )
 cp_data <- change_point_data$x
 
-change_point_data$MLE
+print(change_point_data$MLE)
+
+plot(x = change_point_data$t[1:2000], y = change_point_data$I[1:2000], main="Epidemic Trajectory",
+   xlab="Time", ylab="I(t)")
 ```
 
 # Below, we visualize the I(t) compartment over time.
 ```{r}
-plot(x = change_point_data$t[1:1500], y = change_point_data$I[1:1500], main="Epidemic Trajectory",
+plot(x = change_point_data$t[1:2000], y = change_point_data$I[1:2000], main="Epidemic Trajectory",
    xlab="Time", ylab="I(t)")
 ```
 
@@ -45,17 +48,20 @@ theta0 = list(R0 = 1, beta=0.001, lambda = 1, shape = 1, gamma = 1)
 ```
 
 ```{r}
-test_6 <- run_DAMCMC_complete_old(
-  theta0, cp_Y, N = 20000,
+test_6 <- run_DAMCMC_complete_smallh6(
+  theta0, cp_Y, N = 19000,
   rho = 0.2, param = "bg", approx = "ldp",
   iota_dist = "exponential", gener = FALSE, b = 1/2,
   thin = 1, plt = 2500,
   par_prior = list(
-    a_beta = 1, b_beta = 1,
+    a_beta = 0.1, b_beta = 0.1,
     a_gamma = 1, b_gamma = 1,
     a_R0 = 2, b_R0 = 2,
-    a_lambda = 1, b_lambda = 1
-  ), h_hat = c(0.5,0.5,0.5,0.5,0.5), # P(dbeta_i = 1)
+    a_lambda = 1, b_lambda = 1,
+    a_pi11 = .5, b_pi11 = .5,
+    a_pi01 = .5, b_pi01 = .5
+  ), 
+  length_delta = 8,
   x_b_ratio = 2,
   gamma=1
   )
@@ -65,7 +71,7 @@ test_6 <- run_DAMCMC_complete_old(
 print(analyze_dbeta(test_6$dbeta_lst))
 
 barplot(analyze_dbeta(test_6$dbeta_lst)[[2]], main="Delta Configurations", xlab="Change Point Location",  
- ylab="Count", names.arg=c("Delta One","Delta Two","Delta Three","Delta Four","Delta Five"), 
+ ylab="Count", names.arg=c("Delta One","Delta Two","Delta Three","Delta Four","Delta Five","Delta 6","Delta 7","Delta 8"), 
  border="blue")
 abline(h=1/2, col="blue", lty="dashed", lwd=4)
 ```
@@ -73,7 +79,7 @@ abline(h=1/2, col="blue", lty="dashed", lwd=4)
 ```{r}
 burnin = 1000
 library(tidyverse)
-sim_df <- create_df_dbeta(test_6$dbeta_lst, test_6$beta_lst, burnin, "X5")
+sim_df <- create_df_dbeta(test_6$dbeta_lst, test_6$beta_lst, burnin, "X8")
 sim_df
 ```
 # Frequencies of the most common configurations
@@ -93,8 +99,7 @@ sim_df %>%
 sim_t5 <- sim_df %>% 
   count(delta_beta) %>% 
   mutate(freq = n / sum(n)) %>% 
-  arrange(desc(n)) %>% 
-  head(5)
+  arrange(desc(n))
 sim_t5
 ```
 
@@ -105,10 +110,10 @@ sim_top_deltabetas <- sim_df %>%
   filter(delta_beta %in% sim_t5$delta_beta)
 
 sim_mean_betas <- sim_top_deltabetas %>%
-  select(delta_beta, X1.y:X6) %>%
+  select(ID, delta_beta, X1.y:X9) %>%
   group_by(delta_beta) %>% 
   summarise(across(everything(), mean)) %>% 
-  mutate(X7 = X6) # add the stopping week
+  mutate(X10 = X9)
 
 # flip from cartesian to index. https://tidyr.tidyverse.org/reference/pivot_longer.html
 sim_M <- sim_mean_betas %>% 
@@ -119,17 +124,19 @@ sim_M$time_unit <- factor(sim_M$time_unit, levels=unique(sim_M$time_unit))
 ```
 
 ```{r}
-# Colors
-cols <- c("orange", "red", "yellow", "grey", "grey") # INDEXING ISSUE.
+# mutate(r0)
+sim_M <- sim_M %>% 
+  mutate(R0 = beta * 1000)
 
-# Basic line plot with points
-ggplot(data=sim_M, aes(x=time_unit, y=beta, group=delta_beta, color = delta_beta)) +
-  geom_step() +
-  # geom_line()+
-  geom_point() +
-  scale_color_manual(values = cols) +
-  labs(title = "Transmission Rate", subtitle="Top 5 Configurations", y = "transmission rate (Mean)", x = "Week", color='Change Point Configuration') + 
-  scale_x_discrete(labels=seq(0,6,1)) # add week 6 in.
+# spaghetti plot
+# spagetti plot of R0 over time
+sim_M %>% 
+    ggplot(aes(x = time_unit, y = beta, group=ID)) +
+    geom_step(alpha = 0.1, color = "red") +
+    labs(title = "Transmission Rate Over time", y = "Beta(t)", x = "Time Units", color='Change Point Configuration') + 
+  scale_x_discrete(labels=seq(1,10,1)) +
+  #expand_limits(y = 0) +
+  theme_bw()
 ```
 
 ```{r}
@@ -141,14 +148,12 @@ abline(v=c(2,4),lwd=2,col="red")
 # Create dataframe
 ```{r}
 sim_beta_list <- create_mcmc_list(test_6$beta_lst[burnin:20000])
-length(sim_beta_list)
+length(sim_beta_list[[1]])
 ```
 
 ```{r}
 # combine all beta lists into a dataframe.
-beta_sim_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(1:19001)), Beta1 = sim_beta_list[1], Beta2 = sim_beta_list[2], Beta3 = sim_beta_list[3], Beta4 = sim_beta_list[4], Beta5 = sim_beta_list[5], Beta6 = sim_beta_list[6]))
-beta_sim_tidy <- beta_sim_tidy %>% 
-  remove_burnin(1000)
+beta_sim_tidy <- do.call(rbind, Map(data.frame, Iteration = list(c(1:18001)), Beta1 = sim_beta_list[1], Beta2 = sim_beta_list[2], Beta3 = sim_beta_list[3], Beta4 = sim_beta_list[4], Beta5 = sim_beta_list[5], Beta6 = sim_beta_list[6],Beta7 = sim_beta_list[7],Beta8 = sim_beta_list[8],Beta9 = sim_beta_list[9]))
 ```
 
 ```{r}
@@ -162,7 +167,7 @@ means <- beta_sim_tidy %>%
 
 # ESS
 ESS = coda::effectiveSize(coda::mcmc(beta_sim_tidy))
-ESS # ESS is higher when we correctly specify the model (eg allow for change points.)
+ESS # ESS is higher when we correctly specify the model (eg allow for change points.) ()
 ```
 
 ```{r}
@@ -178,12 +183,13 @@ CI <- inner_join(lower95, upper95, by = "var")
 posterior_df <- inner_join(means, CI, by = "var")
 posterior_df
 ```
+
 ```{r}
 # plot results in a format similar to PDSIR code.
-vars <- c("Beta1", "Beta2","Beta3","Beta4","Beta5","Beta6")
+vars <- c("Beta2", "Beta4","Beta6","Beta8")
 
 for(var in vars)
-  print(draw_tp(beta_sim_tidy, var)) # burn in.
+  print(draw_tp(beta_sim_tidy, var, thin = 10)) # burn in.
 for(var in vars)
   print(draw_histogram(beta_sim_tidy, var))
 for(var in vars)
