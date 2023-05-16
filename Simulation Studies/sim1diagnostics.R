@@ -9,7 +9,7 @@ clearcut_sim1 <- readRDS(file = "clearcut_sim1.rds")
 
 plot(x = clearcut_sim1$t[1:5000], y = clearcut_sim1$I[1:5000], main="Epidemic Trajectory",
      xlab="Time", ylab="I(t)")
-cp_Y <- observed_data(clearcut_sim1, K=11)
+cp_Y <- observed_data(clearcut_sim1, K=10)
 plot(x = cp_Y$ts, y = c(0, cp_Y$T_k), 
      main="Observed Counts", xlab="Time (in Weeks)", ylab="New Infections"
      , cex = 2.5)
