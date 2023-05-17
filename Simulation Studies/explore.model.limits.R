@@ -114,8 +114,8 @@ test.limits.0.1 <- run_DAMCMC_complete_smallh6(
 
 # Post-Processing
 # Outputs the posterior draws of (Delta, Beta) and in a tidy dataframe.
-sim_df_stationary <- create_df_dbeta(test_6$dbeta_lst, test_6$beta_lst, test_6$pi01_lst, test_6$pi11_lst,
-                                     test_6$beta_loglik, burnin=1, "X11")
+sim_df_stationary <- create_df_dbeta(test.limits.0.1$dbeta_lst, test.limits.0.1$beta_lst, test.limits.0.1$pi01_lst, test.limits.0.1$pi11_lst,
+                                     test.limits.0.1$beta_loglik, burnin=1, "X11")
 
 sim_df_stationary <- sim_df_stationary %>%
   rename(Beta_1 = X1.y, Delta_1 = X1.x,
@@ -149,7 +149,7 @@ codamenu()
 ### Plot the change point locations.
 # configurations of delta.
 df_posterior_cp = data.frame(Week = seq(1,11,1),
-                             cp_counts = analyze_dbeta(test_6$dbeta_lst)[[2]])
+                             cp_counts = analyze_dbeta(test.limits.0.1$dbeta_lst)[[2]])
 
 ggplot(df_posterior_cp, aes(Week, cp_counts)) +
   geom_col(fill="black") +
